@@ -21,7 +21,7 @@ type KeyArgs struct {
 }
 
 type GetResult struct {
-	Result string
+	Value string
 }
 
 func (m *Master) Get(args *KeyArgs, reply *GetResult) error {
@@ -41,13 +41,13 @@ func startMaster() {
 	master := new(Master)
 	rpc.Register(master)
 	rpc.HandleHTTP()
-	l, e := net.Listen("tcp", ":7170")
+	l, e := net.Listen("tcp", MasterPort)
 	if e != nil {
 		log.Fatal("listen error:", e)
 	}
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go http.Serve(l, nil)
-	log.Println("Master listening on port 7170")
+	log.Println("Master listening on port ", MasterPort)
 	wg.Wait()
 }
