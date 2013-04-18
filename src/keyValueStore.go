@@ -1,39 +1,66 @@
 package gotwopc
 
 import (
-	"code.google.com/p/leveldb-go/leveldb"
-	leveldbdb "code.google.com/p/leveldb-go/leveldb/db"
+	"database/sql"
 	"fmt"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 type keyValueStore struct {
-	db *leveldb.DB
+	db      *sql.DB
+	putStmt *sql.Stmt
+	delStmt *sql.Stmt
+	getStmt *sql.Stmt
 }
 
 func newKeyValueStore(dbPath string) (store *keyValueStore, err error) {
-	db, err := leveldb.Open("./testdb", &leveldbdb.Options{})
+	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
-		fmt.Printf("Couldn't create db: %q\n", err)
+		fmt.Println(err)
 		return
 	}
 
-	store = &keyValueStore{db}
+	_, err = db.Exec("create table if not exists data (key text not null primary key, value text)")
+	if err != nil {
+		fmt.Printf("Couldn't create table: %q\n", err)
+		return
+	}
+
+	putStmt, err := db.Prepare("insert or replace into data(key, value) values(?, ?)")
+	if err != nil {
+		fmt.Printf("Couldn't prepare put statement: %q\n", err)
+		return
+	}
+
+	delStmt, err := db.Prepare("delete from data where key = ?")
+	if err != nil {
+		fmt.Printf("Couldn't prepare put statement: %q\n", err)
+		return
+	}
+
+	getStmt, err := db.Prepare("select value from data where key = ?")
+	if err != nil {
+		fmt.Printf("Couldn't prepare put statement: %q\n", err)
+		return
+	}
+
+	store = &keyValueStore{db, putStmt, delStmt, getStmt}
 	return
 }
 
 func (s *keyValueStore) put(key string, value string) (err error) {
-	err = s.db.Set([]byte(key), []byte(value), nil)
+	_, err = s.putStmt.Exec(key, value)
 	return
 }
 
 func (s *keyValueStore) del(key string) (err error) {
-	err = s.db.Delete([]byte(key), nil)
+	_, err = s.delStmt.Exec(key)
 	return
 }
 
 func (s *keyValueStore) get(key string) (value string, err error) {
-	bytes, err := s.db.Get([]byte(key), nil)
-	value = string(bytes)
+	row := s.getStmt.QueryRow(key)
+	err = row.Scan(&value)
 	return
 }
 
