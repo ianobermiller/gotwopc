@@ -45,7 +45,9 @@ func TestAll(t *testing.T) {
 
 func TestMultiple(t *testing.T) {
 	Terst(t)
-	for i := 0; i < 10; i += 1 {
+	const count = 10
+
+	for i := 0; i < count; i += 1 {
 		key := fmt.Sprintf("key%v", i)
 		val := fmt.Sprintf("val%v", i)
 		err := store.put(key, val)
@@ -54,7 +56,7 @@ func TestMultiple(t *testing.T) {
 		}
 	}
 
-	for i := 0; i < 10; i += 1 {
+	for i := 0; i < count; i += 1 {
 		key := fmt.Sprintf("key%v", i)
 		val := fmt.Sprintf("val%v", i)
 		v, err := store.get(key)
