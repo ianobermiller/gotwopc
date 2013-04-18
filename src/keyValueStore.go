@@ -1,4 +1,4 @@
-package gotwopc
+package main
 
 import (
 	"github.com/peterbourgon/diskv"

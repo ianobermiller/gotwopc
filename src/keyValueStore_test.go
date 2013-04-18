@@ -1,4 +1,4 @@
-package gotwopc
+package main
 
 import (
 	"fmt"
