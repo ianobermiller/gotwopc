@@ -67,3 +67,14 @@ func TestMultiple(t *testing.T) {
 		Is(v, val)
 	}
 }
+
+func BenchmarkPut(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		key := fmt.Sprintf("key%v", i)
+		val := fmt.Sprintf("val%v", i)
+		err := store.put(key, val)
+		if err != nil {
+			b.Fatal("Failed to put:", err)
+		}
+	}
+}
