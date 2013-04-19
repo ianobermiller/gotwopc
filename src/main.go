@@ -1,7 +1,12 @@
 package main
 
-import ()
+import (
+	"sync"
+)
 
 func main() {
+	var wg sync.WaitGroup
+	wg.Add(1)
 	startMaster()
+	wg.Wait()
 }

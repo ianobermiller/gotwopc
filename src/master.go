@@ -5,7 +5,6 @@ import (
 	"net"
 	"net/http"
 	"net/rpc"
-	"sync"
 )
 
 type Master struct {
@@ -25,7 +24,7 @@ type GetResult struct {
 }
 
 func (m *Master) Get(args *KeyArgs, reply *GetResult) error {
-	reply = &GetResult{"hello"}
+	reply.Value = "hello"
 	return nil
 }
 
@@ -39,15 +38,12 @@ func (m *Master) Put(args *KeyValueArgs, _ *int) error {
 
 func startMaster() {
 	master := new(Master)
-	rpc.Register(master)
-	rpc.HandleHTTP()
+	server := rpc.NewServer()
+	server.Register(master)
 	l, e := net.Listen("tcp", MasterPort)
 	if e != nil {
 		log.Fatal("listen error:", e)
 	}
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go http.Serve(l, nil)
+	go http.Serve(l, server)
 	log.Println("Master listening on port ", MasterPort)
-	wg.Wait()
 }

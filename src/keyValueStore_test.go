@@ -9,7 +9,7 @@ import (
 
 var store *keyValueStore
 
-func Test(t *testing.T) {
+func TestKeyValueStoreSetup(t *testing.T) {
 	os.Remove("./test.db")
 	s, err := newKeyValueStore("./test.db")
 	if err != nil {
@@ -18,7 +18,7 @@ func Test(t *testing.T) {
 	store = s
 }
 
-func TestAll(t *testing.T) {
+func TestKeyValueStoreAll(t *testing.T) {
 	Terst(t)
 	err := store.put("foo", "bar")
 	if err != nil {
@@ -43,7 +43,7 @@ func TestAll(t *testing.T) {
 	}
 }
 
-func TestMultiple(t *testing.T) {
+func TestKeyValueStoreMultiple(t *testing.T) {
 	Terst(t)
 	const count = 10
 
@@ -68,7 +68,7 @@ func TestMultiple(t *testing.T) {
 	}
 }
 
-func BenchmarkPut(b *testing.B) {
+func BenchmarkKeyValueStorePut(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		key := fmt.Sprintf("key%v", i)
 		val := fmt.Sprintf("val%v", i)
