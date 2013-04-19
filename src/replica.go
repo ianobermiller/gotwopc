@@ -8,17 +8,29 @@ import (
 	"net/rpc"
 )
 
+type TxPutArgs struct {
+	Key   string
+	Value string
+	Tx    string
+}
+
+type TxArgs struct {
+	Tx string
+}
+
 type Replica struct {
 	store *keyValueStore
 }
 
-type KeyArgs struct {
-	Key string
-}
+// func (r *Replica) TryPut/Del(args *TxPutArgs, reply *bool) (err error)
+//      if request in flight for key, log and return false
+//      else log and return true
 
-type GetResult struct {
-	Value string
-}
+// func (r *Replica) Rollback(args* TxArgs, reply *bool) (err error)
+//      undo tx, log, and return true
+
+// func (r *Replica) Commit(args* TxArgs, reply *bool) (err error)
+//      write tx to committed storage, log, and return true
 
 func (r *Replica) Get(args *KeyArgs, reply *GetResult) (err error) {
 	val, err := r.store.get(args.Key)
