@@ -12,9 +12,6 @@ var store *keyValueStore
 func TestKeyValueStoreSetup(t *testing.T) {
 	os.Remove("./test.db")
 	s, err := newKeyValueStore("./test.db")
-	if err != nil {
-		t.Fatal("Failed to newKeyValueStore:", err)
-	}
 	store = s
 }
 

@@ -36,7 +36,7 @@ func (m *Master) Put(args *KeyValueArgs, _ *int) error {
 	return nil
 }
 
-func startMaster() {
+func startMaster(close chan int) {
 	master := new(Master)
 	server := rpc.NewServer()
 	server.Register(master)
@@ -45,5 +45,11 @@ func startMaster() {
 		log.Fatal("listen error:", e)
 	}
 	go http.Serve(l, server)
+	go func() {
+		<-close
+		println("closing master")
+		l.Close()
+		close <- 1
+	}()
 	log.Println("Master listening on port ", MasterPort)
 }

@@ -10,7 +10,7 @@ type keyValueStore struct {
 
 func flatTransform(s string) []string { return []string{} }
 
-func newKeyValueStore(dbPath string) (store *keyValueStore, err error) {
+func newKeyValueStore(dbPath string) (store *keyValueStore) {
 	d := diskv.New(diskv.Options{
 		BasePath:     dbPath,
 		Transform:    flatTransform,
