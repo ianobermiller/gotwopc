@@ -2,7 +2,6 @@ package main
 
 import (
 	"log"
-	"net"
 	"net/http"
 	"net/rpc"
 )
@@ -36,20 +35,10 @@ func (m *Master) Put(args *KeyValueArgs, _ *int) error {
 	return nil
 }
 
-func startMaster(close chan int) {
+func runMaster() {
 	master := new(Master)
 	server := rpc.NewServer()
 	server.Register(master)
-	l, e := net.Listen("tcp", MasterPort)
-	if e != nil {
-		log.Fatal("listen error:", e)
-	}
-	go http.Serve(l, server)
-	go func() {
-		<-close
-		println("closing master")
-		l.Close()
-		close <- 1
-	}()
-	log.Println("Master listening on port ", MasterPort)
+	log.Println("Master listening on port", MasterPort)
+	http.ListenAndServe(MasterPort, server)
 }

@@ -11,7 +11,7 @@ var store *keyValueStore
 
 func TestKeyValueStoreSetup(t *testing.T) {
 	os.Remove("./test.db")
-	s, err := newKeyValueStore("./test.db")
+	s := newKeyValueStore("./test.db")
 	store = s
 }
 

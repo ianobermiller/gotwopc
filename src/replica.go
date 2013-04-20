@@ -3,23 +3,45 @@ package main
 import (
 	"fmt"
 	"log"
-	"net"
 	"net/http"
 	"net/rpc"
 )
 
+type TxState int
+
+const (
+	Pending TxState = iota
+	Committed
+	Aborted
+)
+
+type Operation int
+
+const (
+	PutOp Operation = iota
+	DelOp
+)
+
+type Tx struct {
+	id  string
+	key string
+	val string
+	op  Operation
+}
+
 type TxPutArgs struct {
 	Key   string
 	Value string
-	Tx    string
+	TxId  string
 }
 
 type TxArgs struct {
-	Tx string
+	TxId string
 }
 
 type Replica struct {
 	store *keyValueStore
+	txs   map[string]Tx
 }
 
 // func (r *Replica) TryPut/Del(args *TxPutArgs, reply *bool) (err error)
@@ -41,14 +63,10 @@ func (r *Replica) Get(args *KeyArgs, reply *GetResult) (err error) {
 	return
 }
 
-func startReplica(num int) {
-	replica := &Replica{newKeyValueStore(fmt.Sprintf("replica%v", num))}
-	rpc.Register(replica)
-	rpc.HandleHTTP()
-	listener, e := net.Listen("tcp", fmt.Sprintf(":%v", ReplicaPortStart+num))
-	if e != nil {
-		log.Fatal("listen error:", e)
-	}
-	go http.Serve(listener, nil)
+func runReplica(num int) {
+	replica := &Replica{newKeyValueStore(fmt.Sprintf("replica%v", num)), make(map[string]Tx)}
+	server := rpc.NewServer()
+	server.Register(replica)
 	log.Println("Replica ", num, " listening on port ", ReplicaPortStart+num)
+	http.ListenAndServe(fmt.Sprintf(":%v", ReplicaPortStart+num), server)
 }
