@@ -11,12 +11,9 @@ func main() {
 	replicaNumber := flag.IntP("replicaIndex", "i", 0, "replica index to run, starting at 0")
 	flag.Parse()
 
-	_ = replicaCount
-	_ = replicaNumber
-
 	switch {
 	case *isMaster:
-		runMaster()
+		runMaster(*replicaCount)
 	case *isReplica:
 		runReplica(*replicaNumber)
 	default:

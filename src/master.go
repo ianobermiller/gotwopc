@@ -7,6 +7,8 @@ import (
 )
 
 type Master struct {
+	replicaCount int
+	log          *logger
 }
 
 type KeyValueArgs struct {
@@ -35,10 +37,12 @@ func (m *Master) Put(args *KeyValueArgs, _ *int) error {
 	return nil
 }
 
-func runMaster() {
-	master := new(Master)
+func runMaster(replicaCount int) {
+	l := newLogger("log.master.txt")
+	master := &Master{replicaCount, l}
 	server := rpc.NewServer()
 	server.Register(master)
+	master.log.write("wtf mate")
 	log.Println("Master listening on port", MasterPort)
 	http.ListenAndServe(MasterPort, server)
 }
