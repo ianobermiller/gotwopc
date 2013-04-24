@@ -7,21 +7,6 @@ import (
 	"net/rpc"
 )
 
-type TxState int
-
-const (
-	Pending TxState = iota
-	Committed
-	Aborted
-)
-
-type Operation int
-
-const (
-	PutOp Operation = iota
-	DelOp
-)
-
 type Tx struct {
 	id  string
 	key string
@@ -39,6 +24,14 @@ type TxArgs struct {
 	TxId string
 }
 
+type ReplicaKeyArgs struct {
+	Key string
+}
+
+type ReplicaGetResult struct {
+	Value string
+}
+
 type Replica struct {
 	store *keyValueStore
 	txs   map[string]Tx
@@ -54,7 +47,7 @@ type Replica struct {
 // func (r *Replica) Commit(args* TxArgs, reply *bool) (err error)
 //      write tx to committed storage, log, and return true
 
-func (r *Replica) Get(args *KeyArgs, reply *GetResult) (err error) {
+func (r *Replica) Get(args *ReplicaKeyArgs, reply *ReplicaGetResult) (err error) {
 	val, err := r.store.get(args.Key)
 	if err != nil {
 		return

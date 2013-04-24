@@ -1,10 +1,13 @@
 package main
 
 import (
+	"errors"
 	"log"
 	"net/http"
 	"net/rpc"
 )
+
+var _ = errors.New
 
 type Master struct {
 	replicaCount int

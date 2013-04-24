@@ -9,6 +9,25 @@ import (
 
 var _ = os.DevNull
 
+func TestStartAndKillMaster(t *testing.T) {
+	Terst(t)
+
+	startMaster(t)
+
+	client := NewMasterClient(MasterPort)
+
+	_, err := client.Get("foo")
+	if err != nil {
+		t.Fatal("Unable to get foo:", err)
+	}
+
+	killMaster(t)
+
+	_, err = client.Get("foo")
+
+	IsNot(err, nil)
+}
+
 var masterCmd *exec.Cmd
 
 func startMaster(t *testing.T) {
@@ -18,44 +37,27 @@ func startMaster(t *testing.T) {
 		t.Fatal("Unable to Run src.exe")
 	}
 
-	client := NewClient()
+	client := NewMasterClient(MasterPort)
 
-	for {
-		_, err := client.Get("whatever")
+	for i := 0; i < 10; i++ {
+		_, err = client.Get("whatever")
 		if err == nil {
-			break
+			return
 		}
 	}
+	t.Fatal("Unable to Get after running Master:", err)
 }
 
 func killMaster(t *testing.T) {
 	_ = masterCmd.Process.Kill()
 
-	client := NewClient()
+	client := NewMasterClient(MasterPort)
 
-	for {
+	for i := 0; i < 10; i++ {
 		_, err := client.Get("whatever")
 		if err != nil {
-			break
+			return
 		}
 	}
-}
-
-func TestStartAndKillMaster(t *testing.T) {
-	Terst(t)
-
-	startMaster(t)
-
-	client := NewClient()
-
-	_, err := client.Get("foo")
-	if err != nil {
-		t.Fatal("Unable to get foo")
-	}
-
-	killMaster(t)
-
-	_, err = client.Get("foo")
-
-	IsNot(err, nil)
+	t.Fatal("Able to Get after running Master")
 }
