@@ -1,8 +1,11 @@
 package main
 
+import (
+	"fmt"
+)
+
 const MasterPort = "localhost:7170"
 const ReplicaPortStart = 7171
-const ReplicaCount = 3
 
 type TxState int
 
@@ -19,3 +22,7 @@ const (
 	PutOp Operation = iota
 	DelOp
 )
+
+func GetReplicaHost(replicaNum int) string {
+	return fmt.Sprintf("localhost:%v", ReplicaPortStart+replicaNum)
+}

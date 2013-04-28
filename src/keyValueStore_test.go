@@ -11,8 +11,16 @@ var store *keyValueStore
 
 func TestKeyValueStoreSetup(t *testing.T) {
 	os.Remove("./test.db")
-	s := newKeyValueStore("./test.db")
-	store = s
+	store = newKeyValueStore("./test.db")
+}
+
+func TestGetWithoutPut(t *testing.T) {
+	Terst(t)
+
+	_, err := store.get("nonexistentvalue")
+	if err == nil {
+		t.Error("Entry foo should not exist.")
+	}
 }
 
 func TestKeyValueStoreAll(t *testing.T) {

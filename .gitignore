@@ -1,0 +1,4 @@
+*.out
+*.db
+*.exe
+log.*.txt

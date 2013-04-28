@@ -32,6 +32,10 @@ type ReplicaGetResult struct {
 	Value string
 }
 
+type ReplicaActionResult struct {
+	Success bool
+}
+
 type Replica struct {
 	store *keyValueStore
 	txs   map[string]Tx
@@ -47,6 +51,16 @@ type Replica struct {
 // func (r *Replica) Commit(args* TxArgs, reply *bool) (err error)
 //      write tx to committed storage, log, and return true
 
+func (r *Replica) TryPut(args *TxPutArgs, reply *ReplicaActionResult) (err error) {
+	err = r.store.put(args.Key, args.Value)
+	if err != nil {
+		reply.Success = false
+		return
+	}
+	reply.Success = true
+	return
+}
+
 func (r *Replica) Get(args *ReplicaKeyArgs, reply *ReplicaGetResult) (err error) {
 	val, err := r.store.get(args.Key)
 	if err != nil {
@@ -56,10 +70,15 @@ func (r *Replica) Get(args *ReplicaKeyArgs, reply *ReplicaGetResult) (err error)
 	return
 }
 
+func (m *Replica) Ping(args *ReplicaKeyArgs, reply *ReplicaGetResult) (err error) {
+	reply.Value = args.Key
+	return nil
+}
+
 func runReplica(num int) {
 	replica := &Replica{newKeyValueStore(fmt.Sprintf("replica%v", num)), make(map[string]Tx)}
 	server := rpc.NewServer()
 	server.Register(replica)
-	log.Println("Replica ", num, " listening on port ", ReplicaPortStart+num)
-	http.ListenAndServe(fmt.Sprintf(":%v", ReplicaPortStart+num), server)
+	log.Println("Replica", num, "listening on port", ReplicaPortStart+num)
+	http.ListenAndServe(GetReplicaHost(num), server)
 }

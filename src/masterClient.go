@@ -36,9 +36,26 @@ func (c *MasterClient) Get(key string) (Value *string, err error) {
 	}
 
 	var reply GetResult
-	err = c.rpcClient.Call("Master.Get", &KeyArgs{ key }, &reply)
+	err = c.rpcClient.Call("Master.Get", &GetArgs{ key }, &reply)
 	if err != nil {
 		log.Println("MasterClient.Get:", err)
+		return
+	}
+	
+	Value = &reply.Value
+	
+	return
+}
+
+func (c *MasterClient) GetTest(key string, replicanum int) (Value *string, err error) {
+	if err = c.tryConnect(); err != nil {
+		return
+	}
+
+	var reply GetResult
+	err = c.rpcClient.Call("Master.GetTest", &GetTestArgs{ key, replicanum }, &reply)
+	if err != nil {
+		log.Println("MasterClient.GetTest:", err)
 		return
 	}
 	
@@ -73,6 +90,23 @@ func (c *MasterClient) Put(key string, value string) (err error) {
 		log.Println("MasterClient.Put:", err)
 		return
 	}
+	
+	return
+}
+
+func (c *MasterClient) Ping(key string) (Value *string, err error) {
+	if err = c.tryConnect(); err != nil {
+		return
+	}
+
+	var reply GetResult
+	err = c.rpcClient.Call("Master.Ping", &KeyArgs{ key }, &reply)
+	if err != nil {
+		log.Println("MasterClient.Ping:", err)
+		return
+	}
+	
+	Value = &reply.Value
 	
 	return
 }

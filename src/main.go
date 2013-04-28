@@ -1,7 +1,10 @@
 package main
 
 import (
+	"fmt"
 	flag "github.com/ogier/pflag"
+	"log"
+	"strconv"
 )
 
 func main() {
@@ -11,10 +14,14 @@ func main() {
 	replicaNumber := flag.IntP("replicaIndex", "i", 0, "replica index to run, starting at 0")
 	flag.Parse()
 
+	log.SetFlags(0) //log.Ltime | log.Lmicroseconds)
+
 	switch {
 	case *isMaster:
+		log.SetPrefix("M  ")
 		runMaster(*replicaCount)
 	case *isReplica:
+		log.SetPrefix(fmt.Sprint("R", strconv.Itoa(*replicaNumber), " "))
 		runReplica(*replicaNumber)
 	default:
 		flag.Usage()
