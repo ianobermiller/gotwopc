@@ -76,7 +76,7 @@ func (m *Replica) Ping(args *ReplicaKeyArgs, reply *ReplicaGetResult) (err error
 }
 
 func runReplica(num int) {
-	replica := &Replica{newKeyValueStore(fmt.Sprintf("replica%v", num)), make(map[string]Tx)}
+	replica := &Replica{newKeyValueStore(fmt.Sprintf("data/replica%v", num)), make(map[string]Tx)}
 	server := rpc.NewServer()
 	server.Register(replica)
 	log.Println("Replica", num, "listening on port", ReplicaPortStart+num)
