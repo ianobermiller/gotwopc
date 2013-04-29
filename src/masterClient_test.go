@@ -21,6 +21,10 @@ func init() {
 	log.SetPrefix("C  ")
 	log.SetFlags(0)
 	log.SetOutput(NewConditionalWriter())
+
+	// Clean out data from old runs
+	os.RemoveAll("data")
+	os.RemoveAll("logs")
 }
 
 func disabledTestStartAndKillMaster(t *T) {
