@@ -21,7 +21,6 @@ var _ = os.DevNull
 func init() {
 	log.SetPrefix("C  ")
 	log.SetFlags(0)
-	runtime.GOMAXPROCS(runtime.NumCPU())
 }
 
 func disabledTestStartAndKillMaster(t *T) {
