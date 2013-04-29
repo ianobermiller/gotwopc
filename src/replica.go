@@ -136,10 +136,14 @@ func (r *Replica) Commit(args *TxArgs, reply *ReplicaActionResult) (err error) {
 		if err != nil {
 			return errors.New(fmt.Sprint("Unable to put committed val for tx:", txId, "key:", tx.key))
 		}
+		err = r.tempStore.del(tx.key)
+		if err != nil {
+			fmt.Println("Unable to del committed val for tx:", txId, "key:", tx.key)
+		}
 	case DelOp:
 		err = r.committedStore.del(tx.key)
 		if err != nil {
-			return errors.New(fmt.Sprint("Unable to del committed val for tx:", txId, "key:", tx.key))
+			return errors.New(fmt.Sprint("Unable to commit del val for tx:", txId, "key:", tx.key))
 		}
 	}
 
