@@ -4,6 +4,7 @@ import (
 	"encoding/csv"
 	"log"
 	"os"
+	"path"
 	"strings"
 )
 
@@ -13,6 +14,7 @@ type logger struct {
 }
 
 func newLogger(logFilePath string) *logger {
+	err := os.MkdirAll(path.Dir(logFilePath), 0)
 	file, err := os.OpenFile(logFilePath, os.O_APPEND|os.O_CREATE, 0)
 	if err != nil {
 		log.Fatalln("newLogger:", err)

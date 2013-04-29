@@ -51,7 +51,7 @@ type Replica struct {
 }
 
 func NewReplica(num int) *Replica {
-	l := newLogger(fmt.Sprintf("log.replica%v.txt", num))
+	l := newLogger(fmt.Sprintf("logs/replica%v.txt", num))
 	return &Replica{
 		num,
 		newKeyValueStore(fmt.Sprintf("data/replica%v/committed", num)),

@@ -42,7 +42,7 @@ type GetResult struct {
 }
 
 func NewMaster(replicaCount int) *Master {
-	l := newLogger("log.master.txt")
+	l := newLogger("logs/master.txt")
 	replicas := make([]*ReplicaClient, replicaCount)
 	for i := 0; i < replicaCount; i++ {
 		replicas[i] = NewReplicaClient(GetReplicaHost(i))
