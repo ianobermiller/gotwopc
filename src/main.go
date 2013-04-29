@@ -14,6 +14,7 @@ func main() {
 	replicaNumber := flag.IntP("replicaIndex", "i", 0, "replica index to run, starting at 0")
 	flag.Parse()
 
+	log.SetOutput(NewConditionalWriter())
 	log.SetFlags(0) //log.Ltime | log.Lmicroseconds)
 
 	switch {

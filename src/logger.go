@@ -1,13 +1,15 @@
 package main
 
 import (
-	"fmt"
+	"encoding/csv"
 	"log"
 	"os"
+	"strings"
 )
 
 type logger struct {
-	file *os.File
+	file      *os.File
+	csvWriter *csv.Writer
 }
 
 func newLogger(logFilePath string) *logger {
@@ -15,17 +17,33 @@ func newLogger(logFilePath string) *logger {
 	if err != nil {
 		log.Fatalln("newLogger:", err)
 	}
-	return &logger{file}
+	return &logger{file, csv.NewWriter(file)}
 }
 
-func (l *logger) write(args ...interface{}) {
-	_, err := l.file.WriteString(fmt.Sprintln(args...))
+func (l *logger) write(txId string, state TxState, args ...string) {
+	record := []string{txId, state.String()}
+	record = append(record, args...)
+	err := l.csvWriter.Write(record)
 	if err != nil {
-		log.Fatalln("logger.log:", err)
+		log.Fatalln("logger.write:", err)
 	}
 
+	l.csvWriter.Flush()
 	err = l.file.Sync()
 	if err != nil {
 		log.Fatalln("logger.log:", err)
 	}
+}
+
+type ConditionalWriter struct{}
+
+func NewConditionalWriter() *ConditionalWriter {
+	return &ConditionalWriter{}
+}
+
+func (w *ConditionalWriter) Write(b []byte) (n int, err error) {
+	if !strings.Contains(string(b), "The specified network name is no longer available") {
+		n, err = os.Stdout.Write(b)
+	}
+	return
 }

@@ -7,7 +7,6 @@ import (
 	"log"
 	"os"
 	"os/exec"
-	"runtime"
 	"strconv"
 	"sync"
 	. "testing"
@@ -21,6 +20,7 @@ var _ = os.DevNull
 func init() {
 	log.SetPrefix("C  ")
 	log.SetFlags(0)
+	log.SetOutput(NewConditionalWriter())
 }
 
 func disabledTestStartAndKillMaster(t *T) {

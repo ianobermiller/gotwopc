@@ -11,10 +11,25 @@ type TxState int
 
 const (
 	_ TxState = iota
-	Pending
+	Started
+	Prepared
 	Committed
 	Aborted
 )
+
+func (s TxState) String() string {
+	switch s {
+	case Started:
+		return "STARTED"
+	case Prepared:
+		return "PREPARED"
+	case Committed:
+		return "COMMITTED"
+	case Aborted:
+		return "ABORTED"
+	}
+	return "INVALID"
+}
 
 type Operation int
 
@@ -22,6 +37,16 @@ const (
 	PutOp Operation = iota
 	DelOp
 )
+
+func (s Operation) String() string {
+	switch s {
+	case PutOp:
+		return "PUT"
+	case DelOp:
+		return "DEL"
+	}
+	return "INVALID"
+}
 
 func GetReplicaHost(replicaNum int) string {
 	return fmt.Sprintf("localhost:%v", ReplicaPortStart+replicaNum)

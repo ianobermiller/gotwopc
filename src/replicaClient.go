@@ -47,6 +47,57 @@ func (c *ReplicaClient) TryPut(key string, value string, txid string) (Success *
 	return
 }
 
+func (c *ReplicaClient) TryDel(key string, txid string) (Success *bool, err error) {
+	if err = c.tryConnect(); err != nil {
+		return
+	}
+
+	var reply ReplicaActionResult
+	err = c.rpcClient.Call("Replica.TryDel", &TxDelArgs{ key, txid }, &reply)
+	if err != nil {
+		log.Println("ReplicaClient.TryDel:", err)
+		return
+	}
+	
+	Success = &reply.Success
+	
+	return
+}
+
+func (c *ReplicaClient) Commit(txid string) (Success *bool, err error) {
+	if err = c.tryConnect(); err != nil {
+		return
+	}
+
+	var reply ReplicaActionResult
+	err = c.rpcClient.Call("Replica.Commit", &TxArgs{ txid }, &reply)
+	if err != nil {
+		log.Println("ReplicaClient.Commit:", err)
+		return
+	}
+	
+	Success = &reply.Success
+	
+	return
+}
+
+func (c *ReplicaClient) Abort(txid string) (Success *bool, err error) {
+	if err = c.tryConnect(); err != nil {
+		return
+	}
+
+	var reply ReplicaActionResult
+	err = c.rpcClient.Call("Replica.Abort", &TxArgs{ txid }, &reply)
+	if err != nil {
+		log.Println("ReplicaClient.Abort:", err)
+		return
+	}
+	
+	Success = &reply.Success
+	
+	return
+}
+
 func (c *ReplicaClient) Get(key string) (Value *string, err error) {
 	if err = c.tryConnect(); err != nil {
 		return

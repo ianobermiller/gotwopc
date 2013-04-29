@@ -2,11 +2,13 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"github.com/dchest/uniuri"
 	"log"
 	"math/rand"
 	"net/http"
 	"net/rpc"
+	"sync"
 )
 
 var _ = errors.New
@@ -72,18 +74,60 @@ func (m *Master) Del(args *KeyArgs, _ *int) error {
 }
 
 func (m *Master) Put(args *KeyValueArgs, _ *int) (err error) {
-	log.Println("Master.Put is being called")
-	for i := 0; i < m.replicaCount; i++ {
-		success, err := m.replicas[i].TryPut(args.Key, args.Value, uniuri.New())
+
+	txId := uniuri.New()
+	m.log.write(txId, Started)
+
+	// Send out all TryPut requests in parallel
+	// if any abort, set the flag
+	shouldAbort := false
+	log.Println("Master.Put asking replicas to put tx:", txId, "key:", args.Key)
+	m.forEachReplica(func(r *ReplicaClient) {
+		success, err := r.TryPut(args.Key, args.Value, txId)
 		if err != nil {
-			return err
+			fmt.Println("Master.Put r.TryPut:", err)
 		}
 		if !*success {
-			err = errors.New("Transaction aborted")
-			return err
+			shouldAbort = true
 		}
+	})
+
+	// If at least one replica needed to abort
+	if shouldAbort {
+		log.Println("Master.Put asking replicas to abort tx:", txId, "key:", args.Key)
+		m.log.write(txId, Aborted)
+		m.forEachReplica(func(r *ReplicaClient) {
+			_, err := r.Abort(txId)
+			if err != nil {
+				fmt.Println("Master.Put r.Abort:", err)
+			}
+		})
 	}
+
+	// The transaction is now officially committed
+	m.log.write(txId, Committed)
+
+	log.Println("Master.Put asking replicas to commit tx:", txId, "key:", args.Key)
+	m.forEachReplica(func(r *ReplicaClient) {
+		_, err := r.Commit(txId)
+		if err != nil {
+			fmt.Println("Master.Put r.Commit:", err)
+		}
+	})
+
 	return
+}
+
+func (m *Master) forEachReplica(f func(r *ReplicaClient)) {
+	var wg sync.WaitGroup
+	wg.Add(m.replicaCount)
+	for i := 0; i < m.replicaCount; i++ {
+		go func(r *ReplicaClient) {
+			f(r)
+			wg.Done()
+		}(m.replicas[i])
+	}
+	wg.Wait()
 }
 
 func (m *Master) Ping(args *KeyArgs, reply *GetResult) (err error) {
