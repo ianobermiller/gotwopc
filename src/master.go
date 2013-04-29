@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"github.com/dchest/uniuri"
 	"log"
 	"math/rand"
 	"net/http"
@@ -73,7 +74,7 @@ func (m *Master) Del(args *KeyArgs, _ *int) error {
 func (m *Master) Put(args *KeyValueArgs, _ *int) (err error) {
 	log.Println("Master.Put is being called")
 	for i := 0; i < m.replicaCount; i++ {
-		success, err := m.replicas[i].TryPut(args.Key, args.Value, "")
+		success, err := m.replicas[i].TryPut(args.Key, args.Value, uniuri.New())
 		if err != nil {
 			return err
 		}
