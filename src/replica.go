@@ -66,7 +66,7 @@ func (r *Replica) TryPut(args *TxPutArgs, reply *ReplicaActionResult) (err error
 	txId := args.TxId
 	if _, ok := r.lockedKeys[args.Key]; ok {
 		// Key is currently being modified, Abort
-		fmt.Println("Received put for locked key:", args.Key, "in tx:", txId, ", Aborting")
+		log.Println("Received put for locked key:", args.Key, "in tx:", txId, " Aborting")
 		r.log.write(txId, Aborted)
 		return nil
 	}
@@ -75,7 +75,7 @@ func (r *Replica) TryPut(args *TxPutArgs, reply *ReplicaActionResult) (err error
 
 	err = r.tempStore.put(args.Key, args.Value)
 	if err != nil {
-		fmt.Println("Unable to put uncommited val for transaction:", txId, "key:", args.Key, ", Aborting")
+		log.Println("Unable to put uncommited val for transaction:", txId, "key:", args.Key, ", Aborting")
 		r.log.write(txId, Aborted)
 		r.lockedKeys[args.Key] = false
 		return
@@ -92,7 +92,7 @@ func (r *Replica) TryDel(args *TxDelArgs, reply *ReplicaActionResult) (err error
 	txId := args.TxId
 	if _, ok := r.lockedKeys[args.Key]; ok {
 		// Key is currently being modified, Abort
-		fmt.Println("Received del for locked key:", args.Key, "in tx:", txId, ", Aborting")
+		log.Println("Received del for locked key:", args.Key, "in tx:", txId, " Aborting")
 		r.log.write(txId, Aborted)
 		return nil
 	}
@@ -112,15 +112,14 @@ func (r *Replica) Commit(args *TxArgs, reply *ReplicaActionResult) (err error) {
 
 	tx, hasTx := r.txs[txId]
 	if !hasTx {
-		// Shouldn't happen, we've never heard of this transaction
-		reply.Success = false
+		// Just ignore, we've never heard of this transaction
 		return errors.New(fmt.Sprint("Received commit for unknown transaction:", txId))
 	}
 
 	_, keyLocked := r.lockedKeys[tx.key]
 	if !keyLocked {
 		// Shouldn't happen, key is unlocked
-		fmt.Println("Received commit for transaction with unlocked key:", txId)
+		log.Println("Received commit for transaction with unlocked key:", txId)
 	}
 
 	r.lockedKeys[tx.key] = false
@@ -129,7 +128,6 @@ func (r *Replica) Commit(args *TxArgs, reply *ReplicaActionResult) (err error) {
 	case PutOp:
 		val, err := r.tempStore.get(tx.key)
 		if err != nil {
-			reply.Success = false
 			return errors.New(fmt.Sprint("Unable to find val for uncommitted tx:", txId, "key:", tx.key))
 		}
 		err = r.committedStore.put(tx.key, val)
@@ -161,14 +159,13 @@ func (r *Replica) Abort(args *TxArgs, reply *ReplicaActionResult) (err error) {
 	tx, hasTx := r.txs[txId]
 	if !hasTx {
 		// Shouldn't happen, we've never heard of this transaction
-		reply.Success = false
 		return errors.New(fmt.Sprint("Received abort for unknown transaction:", txId))
 	}
 
 	_, keyLocked := r.lockedKeys[tx.key]
 	if !keyLocked {
 		// Shouldn't happen, key is unlocked
-		fmt.Println("Received abort for transaction with unlocked key:", txId)
+		log.Println("Received abort for transaction with unlocked key:", txId)
 	}
 
 	r.lockedKeys[tx.key] = false
