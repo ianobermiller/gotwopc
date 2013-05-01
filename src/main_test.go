@@ -2,14 +2,14 @@ package main
 
 import (
 	"fmt"
-	. "github.com/robertkrimen/terst"
 	"io"
+	. "launchpad.net/gocheck"
 	"log"
 	"os"
 	"os/exec"
 	"strconv"
 	"sync"
-	. "testing"
+	"testing"
 	"time"
 )
 
@@ -17,7 +17,14 @@ const ReplicaCount = 4
 
 var _ = os.DevNull
 
-func init() {
+// Hook up gocheck into the "go test" runner.
+func Test(t *testing.T) { TestingT(t) }
+
+type MainSuite struct{}
+
+var _ = Suite(&MainSuite{})
+
+func (s *MainSuite) SetUpSuite(c *C) {
 	log.SetPrefix("C  ")
 	log.SetFlags(0)
 	log.SetOutput(NewConditionalWriter())
@@ -27,31 +34,33 @@ func init() {
 	os.RemoveAll("logs")
 }
 
-func disabledTestStartAndKillMaster(t *T) {
-	Terst(t)
+func (s *MainSuite) TearDownTest(c *C) {
+	// Clean out data from old runs
+	os.RemoveAll("data")
+	os.RemoveAll("logs")
+}
 
-	startMaster(t)
+func (s *MainSuite) TestStartAndKillMaster(c *C) {
+	startMaster(c)
 
 	client := NewMasterClient(MasterPort)
 
-	killMaster(t)
+	killMaster(c)
 
 	_, err := client.Ping("foo")
 
-	IsNot(err, nil)
+	c.Assert(err, Not(Equals), nil)
 }
 
-func TestPutAndGetFromReplicas(t *T) {
-	Terst(t)
-
-	startReplicas(t)
-	startMaster(t)
-	defer killAll(t)
+func (s *MainSuite) TestPutAndGetFromReplicas(c *C) {
+	startReplicas(c)
+	startMaster(c)
+	defer killAll(c)
 
 	client := NewMasterClient(MasterPort)
 
 	err := client.Put("foo", "bar")
-	Is(err, nil)
+	c.Assert(err, Equals, nil)
 
 	// every replica should have the value
 	var wg sync.WaitGroup
@@ -60,19 +69,77 @@ func TestPutAndGetFromReplicas(t *T) {
 		go func(i int) {
 			val, err := client.GetTest("foo", i)
 			if err != nil || *val != "bar" {
-				t.Error("Get failed.")
+				c.Error("Get failed.")
 			}
 			wg.Done()
-			//Is(err, nil)
+			//c.Assert(err, Equals, nil)
 			//Is(*val, "bar")
 		}(i)
 	}
 	wg.Wait()
 }
 
+func (s *MainSuite) TestReplicaShouldAbortIfPutOnLockedKey(c *C) {
+	startReplicas(c)
+	startMaster(c)
+	defer killAll(c)
+
+	client := NewReplicaClient(GetReplicaHost(0))
+
+	ok, err := client.TryPut("foo", "bar1", "tx1")
+	c.Assert(err, Equals, nil)
+	c.Assert(*ok, Equals, true)
+
+	ok, err = client.TryPut("foo", "bar2", "tx2")
+	c.Assert(err, Equals, nil)
+	c.Assert(*ok, Equals, false)
+
+	ok, err = client.Commit("tx1")
+	c.Assert(err, Equals, nil)
+	c.Assert(*ok, Equals, true)
+}
+
+func (s *MainSuite) TestReplicaShouldAbortIfDelOnLockedKey(c *C) {
+	startReplicas(c)
+	startMaster(c)
+	defer killAll(c)
+
+	client := NewReplicaClient(GetReplicaHost(0))
+
+	ok, err := client.TryPut("foo", "bar1", "tx1")
+	c.Assert(err, Equals, nil)
+	c.Assert(*ok, Equals, true)
+
+	ok, err = client.TryDel("foo", "tx2")
+	c.Assert(err, Equals, nil)
+	c.Assert(*ok, Equals, false)
+}
+
+func (s *MainSuite) TestReplicaShouldErrOnUnknownTxCommit(c *C) {
+	startReplicas(c)
+	startMaster(c)
+	defer killAll(c)
+
+	client := NewReplicaClient(GetReplicaHost(0))
+
+	_, err := client.Commit("tx1")
+	c.Assert(err, Not(Equals), nil)
+}
+
+func (s *MainSuite) TestReplicaShouldErrOnUnknownTxAbort(c *C) {
+	startReplicas(c)
+	startMaster(c)
+	defer killAll(c)
+
+	client := NewReplicaClient(GetReplicaHost(0))
+
+	_, err := client.Abort("tx1")
+	c.Assert(err, Not(Equals), nil)
+}
+
 var masterCmd *exec.Cmd
 
-func startMaster(t *T) {
+func startMaster(t *C) {
 	masterCmd = startCmd(t, "src.exe", "-m", "-n", strconv.Itoa(ReplicaCount))
 
 	client := NewMasterClient(MasterPort)
@@ -88,7 +155,7 @@ func startMaster(t *T) {
 
 var replicas = [ReplicaCount]*exec.Cmd{}
 
-func startReplicas(t *T) {
+func startReplicas(t *C) {
 	var wg sync.WaitGroup
 	for i := 0; i < ReplicaCount; i++ {
 		wg.Add(1)
@@ -100,7 +167,7 @@ func startReplicas(t *T) {
 	wg.Wait()
 }
 
-func startReplica(t *T, n int) {
+func startReplica(t *C, n int) {
 	replicas[n] = startCmd(t, "src.exe", "-r", "-i", strconv.Itoa(n))
 
 	client := NewReplicaClient(GetReplicaHost(n))
@@ -114,7 +181,7 @@ func startReplica(t *T, n int) {
 		fmt.Sprintf("Unable to Ping after running Replica %v.", n))
 }
 
-func killMaster(t *T) {
+func killMaster(t *C) {
 	masterCmd.Process.Kill()
 
 	client := NewMasterClient(MasterPort)
@@ -128,7 +195,7 @@ func killMaster(t *T) {
 		"Able to Ping after running Master.")
 }
 
-func verify(t *T, check func() bool, successMessage string, failMessage string) {
+func verify(t *C, check func() bool, successMessage string, failMessage string) {
 	for i := 0; i < 500; i++ {
 		if check() {
 			log.Println(successMessage)
@@ -139,14 +206,14 @@ func verify(t *T, check func() bool, successMessage string, failMessage string) 
 	t.Fatal(failMessage)
 }
 
-func killAll(t *T) {
-	killMaster(t)
+func killAll(c *C) {
+	killMaster(c)
 	for _, replicaCmd := range replicas {
 		replicaCmd.Process.Kill()
 	}
 }
 
-func startCmd(t *T, path string, args ...string) *exec.Cmd {
+func startCmd(t *C, path string, args ...string) *exec.Cmd {
 	cmd := exec.Command(path, args...)
 
 	stdout, err := cmd.StdoutPipe()
