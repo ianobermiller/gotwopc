@@ -79,29 +79,34 @@ func (m *Master) Put(args *KeyValueArgs, _ *int) (err error) {
 	m.log.write(txId, Started)
 
 	// Send out all TryPut requests in parallel
-	// if any abort, set the flag
-	shouldAbort := false
+	// if any abort, send on the channel.
+	// Channel must be buffered to allow the non-blocking read in the switch.
+	shouldAbort := make(chan int, m.replicaCount)
 	log.Println("Master.Put asking replicas to put tx:", txId, "key:", args.Key)
 	m.forEachReplica(func(r *ReplicaClient) {
 		success, err := r.TryPut(args.Key, args.Value, txId)
 		if err != nil {
-			fmt.Println("Master.Put r.TryPut:", err)
+			log.Println("Master.Put r.TryPut:", err)
 		}
 		if !*success {
-			shouldAbort = true
+			shouldAbort <- 1
 		}
 	})
 
 	// If at least one replica needed to abort
-	if shouldAbort {
+	select {
+	case <-shouldAbort:
 		log.Println("Master.Put asking replicas to abort tx:", txId, "key:", args.Key)
 		m.log.write(txId, Aborted)
 		m.forEachReplica(func(r *ReplicaClient) {
 			_, err := r.Abort(txId)
 			if err != nil {
-				fmt.Println("Master.Put r.Abort:", err)
+				log.Println("Master.Put r.Abort:", err)
 			}
 		})
+		return
+	default:
+		break
 	}
 
 	// The transaction is now officially committed
