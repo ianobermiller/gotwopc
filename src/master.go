@@ -2,7 +2,6 @@ package main
 
 import (
 	"errors"
-	"fmt"
 	"github.com/dchest/uniuri"
 	"log"
 	"math/rand"
@@ -116,7 +115,7 @@ func (m *Master) Put(args *KeyValueArgs, _ *int) (err error) {
 	m.forEachReplica(func(r *ReplicaClient) {
 		_, err := r.Commit(txId)
 		if err != nil {
-			fmt.Println("Master.Put r.Commit:", err)
+			log.Println("Master.Put r.Commit:", err)
 		}
 	})
 

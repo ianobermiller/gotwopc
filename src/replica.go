@@ -122,7 +122,7 @@ func (r *Replica) Commit(args *TxArgs, reply *ReplicaActionResult) (err error) {
 		log.Println("Received commit for transaction with unlocked key:", txId)
 	}
 
-	r.lockedKeys[tx.key] = false
+	delete(r.lockedKeys, tx.key)
 
 	switch tx.op {
 	case PutOp:
@@ -168,7 +168,7 @@ func (r *Replica) Abort(args *TxArgs, reply *ReplicaActionResult) (err error) {
 		log.Println("Received abort for transaction with unlocked key:", txId)
 	}
 
-	r.lockedKeys[tx.key] = false
+	delete(r.lockedKeys, tx.key)
 
 	switch tx.op {
 	case PutOp:
