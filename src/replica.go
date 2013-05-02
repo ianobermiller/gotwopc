@@ -77,7 +77,7 @@ func (r *Replica) TryPut(args *TxPutArgs, reply *ReplicaActionResult) (err error
 	if err != nil {
 		log.Println("Unable to put uncommited val for transaction:", txId, "key:", args.Key, ", Aborting")
 		r.log.write(txId, Aborted)
-		r.lockedKeys[args.Key] = false
+		delete(r.lockedKeys, args.Key)
 		return
 	}
 

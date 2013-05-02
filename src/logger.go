@@ -8,9 +8,15 @@ import (
 	"strings"
 )
 
+type logRequest struct {
+	record []string
+	done   chan int
+}
+
 type logger struct {
 	file      *os.File
 	csvWriter *csv.Writer
+	requests  chan *logRequest
 }
 
 func newLogger(logFilePath string) *logger {
@@ -19,22 +25,38 @@ func newLogger(logFilePath string) *logger {
 	if err != nil {
 		log.Fatalln("newLogger:", err)
 	}
-	return &logger{file, csv.NewWriter(file)}
+
+	l := &logger{file, csv.NewWriter(file), make(chan *logRequest)}
+
+	go l.loggingLoop()
+
+	return l
+}
+
+func (l *logger) loggingLoop() {
+	for {
+		req := <-l.requests
+		err := l.csvWriter.Write(req.record)
+		if err != nil {
+			log.Fatalln("logger.write fatal:", err)
+		}
+
+		l.csvWriter.Flush()
+		err = l.file.Sync()
+		if err != nil {
+			log.Fatalln("logger.write fatal:", err)
+		}
+		req.done <- 1
+	}
 }
 
 func (l *logger) write(txId string, state TxState, args ...string) {
 	record := []string{txId, state.String()}
 	record = append(record, args...)
-	err := l.csvWriter.Write(record)
-	if err != nil {
-		log.Fatalln("logger.write:", err)
-	}
-
-	l.csvWriter.Flush()
-	err = l.file.Sync()
-	if err != nil {
-		log.Fatalln("logger.log:", err)
-	}
+	log.Println(record)
+	done := make(chan int)
+	l.requests <- &logRequest{record, done}
+	<-done
 }
 
 type ConditionalWriter struct{}

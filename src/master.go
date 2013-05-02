@@ -127,8 +127,8 @@ func (m *Master) forEachReplica(f func(r *ReplicaClient)) {
 	wg.Add(m.replicaCount)
 	for i := 0; i < m.replicaCount; i++ {
 		go func(r *ReplicaClient) {
+			defer wg.Done()
 			f(r)
-			wg.Done()
 		}(m.replicas[i])
 	}
 	wg.Wait()
