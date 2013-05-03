@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"net/rpc"
+	"os"
 )
 
 type Tx struct {
@@ -19,15 +20,18 @@ type TxPutArgs struct {
 	Key   string
 	Value string
 	TxId  string
+	Die   ReplicaDeath
 }
 
 type TxDelArgs struct {
 	Key  string
 	TxId string
+	Die  ReplicaDeath
 }
 
 type TxArgs struct {
 	TxId string
+	Die  ReplicaDeath
 }
 
 type ReplicaKeyArgs struct {
@@ -51,6 +55,22 @@ type Replica struct {
 	log            *logger
 }
 
+type ReplicaDeath int
+
+const (
+	ReplicaDontDie ReplicaDeath = iota
+	ReplicaDieBeforeProcessingMutateRequest
+	ReplicaDieAfterAbortingDueToLock
+	ReplicaDieAfterWritingToTempStore
+	ReplicaDieAfterLoggingPrepared
+
+	ReplicaDieBeforeProcessingCommit
+	ReplicaDieAfterWritingToCommittedStore
+	ReplicaDieAfterDeletingFromTempStore
+	ReplicaDieAfterDeletingFromComittedStore
+	ReplicaDieAfterLoggingCommitted
+)
+
 func NewReplica(num int) *Replica {
 	l := newLogger(fmt.Sprintf("logs/replica%v.txt", num))
 	return &Replica{
@@ -62,58 +82,57 @@ func NewReplica(num int) *Replica {
 		l}
 }
 
-func (r *Replica) SetAndLogState(txId string, state TxState) {
-	r.txs[txId].state = state
-	r.log.write(txId, state)
-}
-
 func (r *Replica) TryPut(args *TxPutArgs, reply *ReplicaActionResult) (err error) {
-	reply.Success = false
-	txId := args.TxId
-
-	r.txs[txId] = &Tx{txId, args.Key, PutOp, Started}
-
-	if _, ok := r.lockedKeys[args.Key]; ok {
-		// Key is currently being modified, Abort
-		log.Println("Received put for locked key:", args.Key, "in tx:", txId, " Aborting")
-		r.SetAndLogState(txId, Aborted)
-		return nil
-	}
-
-	r.lockedKeys[args.Key] = true
-
-	err = r.tempStore.put(args.Key, args.Value)
-	if err != nil {
-		log.Println("Unable to put uncommited val for transaction:", txId, "key:", args.Key, ", Aborting")
-		r.SetAndLogState(txId, Aborted)
-		delete(r.lockedKeys, args.Key)
-		return
-	}
-
-	r.SetAndLogState(txId, Prepared)
-	reply.Success = true
-	return
+	writeToTempStore := func() error { return r.tempStore.put(args.Key, args.Value) }
+	return r.tryMutate(args.Key, args.TxId, args.Die, PutOp, writeToTempStore, reply)
 }
 
 func (r *Replica) TryDel(args *TxDelArgs, reply *ReplicaActionResult) (err error) {
+	return r.tryMutate(args.Key, args.TxId, args.Die, DelOp, nil, reply)
+}
+
+func (r *Replica) tryMutate(key string, txId string, die ReplicaDeath, op Operation, f func() error, reply *ReplicaActionResult) (err error) {
+	dieIf(die, ReplicaDieBeforeProcessingMutateRequest)
 	reply.Success = false
-	txId := args.TxId
-	if _, ok := r.lockedKeys[args.Key]; ok {
+
+	r.txs[txId] = &Tx{txId, key, op, Started}
+
+	if _, ok := r.lockedKeys[key]; ok {
 		// Key is currently being modified, Abort
-		log.Println("Received del for locked key:", args.Key, "in tx:", txId, " Aborting")
+		log.Println("Received", op.String(), "for locked key:", key, "in tx:", txId, " Aborting")
+		r.txs[txId].state = Aborted
 		r.log.write(txId, Aborted)
+		dieIf(die, ReplicaDieAfterAbortingDueToLock)
 		return nil
 	}
 
-	r.lockedKeys[args.Key] = true
+	r.lockedKeys[key] = true
 
-	r.txs[txId] = &Tx{txId, args.Key, DelOp, Prepared}
-	r.log.write(txId, Prepared, DelOp.String(), args.Key)
+	if f != nil {
+		err = f()
+		if err != nil {
+			log.Println("Unable to", op.String(), "uncommited val for transaction:", txId, "key:", key, ", Aborting")
+			r.txs[txId].state = Aborted
+			r.log.write(txId, Aborted)
+			delete(r.lockedKeys, key)
+			return
+		}
+	}
+
+	dieIf(die, ReplicaDieAfterWritingToTempStore)
+
+	r.txs[txId].state = Prepared
+	r.log.write(txId, Prepared, op.String(), key)
 	reply.Success = true
+
+	dieIf(die, ReplicaDieAfterLoggingPrepared)
+
 	return
 }
 
 func (r *Replica) Commit(args *TxArgs, reply *ReplicaActionResult) (err error) {
+	dieIf(args.Die, ReplicaDieBeforeProcessingCommit)
+
 	reply.Success = false
 
 	txId := args.TxId
@@ -139,15 +158,19 @@ func (r *Replica) Commit(args *TxArgs, reply *ReplicaActionResult) (err error) {
 			return errors.New(fmt.Sprint("Unable to find val for uncommitted tx:", txId, "key:", tx.key))
 		}
 		err = r.committedStore.put(tx.key, val)
+		dieIf(args.Die, ReplicaDieAfterWritingToCommittedStore)
 		if err != nil {
 			return errors.New(fmt.Sprint("Unable to put committed val for tx:", txId, "key:", tx.key))
 		}
+
 		err = r.tempStore.del(tx.key)
+		dieIf(args.Die, ReplicaDieAfterDeletingFromTempStore)
 		if err != nil {
 			fmt.Println("Unable to del committed val for tx:", txId, "key:", tx.key)
 		}
 	case DelOp:
 		err = r.committedStore.del(tx.key)
+		dieIf(args.Die, ReplicaDieAfterDeletingFromComittedStore)
 		if err != nil {
 			return errors.New(fmt.Sprint("Unable to commit del val for tx:", txId, "key:", tx.key))
 		}
@@ -156,6 +179,8 @@ func (r *Replica) Commit(args *TxArgs, reply *ReplicaActionResult) (err error) {
 	r.log.write(txId, Committed)
 	delete(r.txs, txId)
 	reply.Success = true
+
+	dieIf(args.Die, ReplicaDieAfterLoggingCommitted)
 	return nil
 }
 
@@ -215,4 +240,11 @@ func runReplica(num int) {
 	server.Register(replica)
 	log.Println("Replica", num, "listening on port", ReplicaPortStart+num)
 	http.ListenAndServe(GetReplicaHost(num), server)
+}
+
+func dieIf(actual ReplicaDeath, expected ReplicaDeath) {
+	if actual == expected {
+		log.Println("Killing self as requested at", expected)
+		os.Exit(1)
+	}
 }

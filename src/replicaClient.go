@@ -30,13 +30,13 @@ func (c *ReplicaClient) tryConnect() (err error) {
 	return
 }
 
-func (c *ReplicaClient) TryPut(key string, value string, txid string) (Success *bool, err error) {
+func (c *ReplicaClient) TryPut(key string, value string, txid string, die ReplicaDeath) (Success *bool, err error) {
 	if err = c.tryConnect(); err != nil {
 		return
 	}
 
 	var reply ReplicaActionResult
-	err = c.rpcClient.Call("Replica.TryPut", &TxPutArgs{ key, value, txid }, &reply)
+	err = c.rpcClient.Call("Replica.TryPut", &TxPutArgs{ key, value, txid, die }, &reply)
 	if err != nil {
 		log.Println("ReplicaClient.TryPut:", err)
 		return
@@ -47,13 +47,13 @@ func (c *ReplicaClient) TryPut(key string, value string, txid string) (Success *
 	return
 }
 
-func (c *ReplicaClient) TryDel(key string, txid string) (Success *bool, err error) {
+func (c *ReplicaClient) TryDel(key string, txid string, die ReplicaDeath) (Success *bool, err error) {
 	if err = c.tryConnect(); err != nil {
 		return
 	}
 
 	var reply ReplicaActionResult
-	err = c.rpcClient.Call("Replica.TryDel", &TxDelArgs{ key, txid }, &reply)
+	err = c.rpcClient.Call("Replica.TryDel", &TxDelArgs{ key, txid, die }, &reply)
 	if err != nil {
 		log.Println("ReplicaClient.TryDel:", err)
 		return
@@ -64,13 +64,13 @@ func (c *ReplicaClient) TryDel(key string, txid string) (Success *bool, err erro
 	return
 }
 
-func (c *ReplicaClient) Commit(txid string) (Success *bool, err error) {
+func (c *ReplicaClient) Commit(txid string, die ReplicaDeath) (Success *bool, err error) {
 	if err = c.tryConnect(); err != nil {
 		return
 	}
 
 	var reply ReplicaActionResult
-	err = c.rpcClient.Call("Replica.Commit", &TxArgs{ txid }, &reply)
+	err = c.rpcClient.Call("Replica.Commit", &TxArgs{ txid, die }, &reply)
 	if err != nil {
 		log.Println("ReplicaClient.Commit:", err)
 		return
@@ -81,13 +81,13 @@ func (c *ReplicaClient) Commit(txid string) (Success *bool, err error) {
 	return
 }
 
-func (c *ReplicaClient) Abort(txid string) (Success *bool, err error) {
+func (c *ReplicaClient) Abort(txid string, die ReplicaDeath) (Success *bool, err error) {
 	if err = c.tryConnect(); err != nil {
 		return
 	}
 
 	var reply ReplicaActionResult
-	err = c.rpcClient.Call("Replica.Abort", &TxArgs{ txid }, &reply)
+	err = c.rpcClient.Call("Replica.Abort", &TxArgs{ txid, die }, &reply)
 	if err != nil {
 		log.Println("ReplicaClient.Abort:", err)
 		return
