@@ -53,7 +53,6 @@ func (l *logger) loggingLoop() {
 func (l *logger) write(txId string, state TxState, args ...string) {
 	record := []string{txId, state.String()}
 	record = append(record, args...)
-	log.Println(record)
 	done := make(chan int)
 	l.requests <- &logRequest{record, done}
 	<-done

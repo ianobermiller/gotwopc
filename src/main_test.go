@@ -134,15 +134,17 @@ func (s *MainSuite) TestReplicaShouldErrWithStress(c *C) {
 	startMaster(c)
 	defer killAll(c)
 
+	keys := []string{"key1", "key2", "key3", "key4", "key5"}
+	const clients = 4
 	var wg sync.WaitGroup
-	wg.Add(4)
-	for i := 0; i < 4; i++ {
+	wg.Add(clients)
+	for i := 0; i < clients; i++ {
 		go func() {
 			defer wg.Done()
 			client := NewMasterClient(MasterPort)
 			failedCount := 0
 			for j := 0; j < 5; j++ {
-				err := client.Put("foo", "bar")
+				err := client.Put(keys[j], "bar")
 				if err != nil {
 					failedCount++
 				}

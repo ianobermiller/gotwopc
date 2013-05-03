@@ -9,9 +9,10 @@ import (
 )
 
 type Tx struct {
-	id  string
-	key string
-	op  Operation
+	id    string
+	key   string
+	op    Operation
+	state TxState
 }
 
 type TxPutArgs struct {
@@ -61,13 +62,21 @@ func NewReplica(num int) *Replica {
 		l}
 }
 
+func (r *Replica) SetAndLogState(txId string, state TxState) {
+	r.txs[txId].state = state
+	r.log.write(txId, state)
+}
+
 func (r *Replica) TryPut(args *TxPutArgs, reply *ReplicaActionResult) (err error) {
 	reply.Success = false
 	txId := args.TxId
+
+	r.txs[txId] = &Tx{txId, args.Key, PutOp, Started}
+
 	if _, ok := r.lockedKeys[args.Key]; ok {
 		// Key is currently being modified, Abort
 		log.Println("Received put for locked key:", args.Key, "in tx:", txId, " Aborting")
-		r.log.write(txId, Aborted)
+		r.SetAndLogState(txId, Aborted)
 		return nil
 	}
 
@@ -76,13 +85,12 @@ func (r *Replica) TryPut(args *TxPutArgs, reply *ReplicaActionResult) (err error
 	err = r.tempStore.put(args.Key, args.Value)
 	if err != nil {
 		log.Println("Unable to put uncommited val for transaction:", txId, "key:", args.Key, ", Aborting")
-		r.log.write(txId, Aborted)
+		r.SetAndLogState(txId, Aborted)
 		delete(r.lockedKeys, args.Key)
 		return
 	}
 
-	r.txs[txId] = &Tx{txId, args.Key, PutOp}
-	r.log.write(txId, Prepared, PutOp.String(), args.Key)
+	r.SetAndLogState(txId, Prepared)
 	reply.Success = true
 	return
 }
@@ -99,7 +107,7 @@ func (r *Replica) TryDel(args *TxDelArgs, reply *ReplicaActionResult) (err error
 
 	r.lockedKeys[args.Key] = true
 
-	r.txs[txId] = &Tx{txId, args.Key, DelOp}
+	r.txs[txId] = &Tx{txId, args.Key, DelOp, Prepared}
 	r.log.write(txId, Prepared, DelOp.String(), args.Key)
 	reply.Success = true
 	return
