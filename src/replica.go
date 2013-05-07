@@ -55,22 +55,6 @@ type Replica struct {
 	log            *logger
 }
 
-type ReplicaDeath int
-
-const (
-	ReplicaDontDie ReplicaDeath = iota
-	ReplicaDieBeforeProcessingMutateRequest
-	ReplicaDieAfterAbortingDueToLock
-	ReplicaDieAfterWritingToTempStore
-	ReplicaDieAfterLoggingPrepared
-
-	ReplicaDieBeforeProcessingCommit
-	ReplicaDieAfterWritingToCommittedStore
-	ReplicaDieAfterDeletingFromTempStore
-	ReplicaDieAfterDeletingFromComittedStore
-	ReplicaDieAfterLoggingCommitted
-)
-
 func NewReplica(num int) *Replica {
 	l := newLogger(fmt.Sprintf("logs/replica%v.txt", num))
 	return &Replica{

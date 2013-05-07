@@ -48,6 +48,22 @@ func (s Operation) String() string {
 	return "INVALID"
 }
 
+type ReplicaDeath int
+
+const (
+	ReplicaDontDie ReplicaDeath = iota
+	ReplicaDieBeforeProcessingMutateRequest
+	ReplicaDieAfterAbortingDueToLock
+	ReplicaDieAfterWritingToTempStore
+	ReplicaDieAfterLoggingPrepared
+
+	ReplicaDieBeforeProcessingCommit
+	ReplicaDieAfterWritingToCommittedStore
+	ReplicaDieAfterDeletingFromTempStore
+	ReplicaDieAfterDeletingFromComittedStore
+	ReplicaDieAfterLoggingCommitted
+)
+
 func GetReplicaHost(replicaNum int) string {
 	return fmt.Sprintf("localhost:%v", ReplicaPortStart+replicaNum)
 }
