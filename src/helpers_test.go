@@ -32,24 +32,33 @@ func startMaster(t *C) {
 
 var replicas = [ReplicaCount]*exec.Cmd{}
 
-func startReplicas(t *C) {
+func startReplicas(c *C, shouldRestart bool) {
 	var wg sync.WaitGroup
 	for i := 0; i < ReplicaCount; i++ {
 		wg.Add(1)
 		go func(i int) {
-			startReplica(t, i)
+			startReplica(c, i, shouldRestart)
 			wg.Done()
 		}(i)
 	}
 	wg.Wait()
 }
 
-func startReplica(t *C, n int) {
-	replicas[n] = startCmd(t, "src.exe", "-r", "-i", strconv.Itoa(n))
+func startReplica(c *C, n int, shouldRestart bool) {
+	replicas[n] = startCmd(c, "src.exe", "-r", "-i", strconv.Itoa(n))
 
 	client := NewReplicaClient(GetReplicaHost(n))
 
-	verify(t,
+	if shouldRestart {
+		go func(cmd *exec.Cmd) {
+			cmd.Wait()
+			if replicas[n] != nil {
+				startReplica(c, n, shouldRestart)
+			}
+		}(replicas[n])
+	}
+
+	verify(c,
 		func() bool {
 			_, err := client.Ping("whatever")
 			return err == nil
@@ -58,12 +67,12 @@ func startReplica(t *C, n int) {
 		fmt.Sprintf("Unable to Ping after running Replica %v.", n))
 }
 
-func killMaster(t *C) {
+func killMaster(c *C) {
 	masterCmd.Process.Kill()
-
+	masterCmd = nil
 	client := NewMasterClient(MasterPort)
 
-	verify(t,
+	verify(c,
 		func() bool {
 			_, err := client.Ping("whatever")
 			return err != nil
@@ -72,7 +81,7 @@ func killMaster(t *C) {
 		"Able to Ping after running Master.")
 }
 
-func verify(t *C, check func() bool, successMessage string, failMessage string) {
+func verify(c *C, check func() bool, successMessage string, failMessage string) {
 	for i := 0; i < 500; i++ {
 		if check() {
 			log.Println(successMessage)
@@ -80,31 +89,32 @@ func verify(t *C, check func() bool, successMessage string, failMessage string) 
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	t.Fatal(failMessage)
+	c.Fatal(failMessage)
 }
 
 func killAll(c *C) {
 	killMaster(c)
-	for _, replicaCmd := range replicas {
+	for i, replicaCmd := range replicas {
+		replicas[i] = nil
 		replicaCmd.Process.Kill()
 	}
 }
 
-func startCmd(t *C, path string, args ...string) *exec.Cmd {
+func startCmd(c *C, path string, args ...string) *exec.Cmd {
 	cmd := exec.Command(path, args...)
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		t.Fatal(err)
+		c.Fatal(err)
 	}
 
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
-		t.Fatal(err)
+		c.Fatal(err)
 	}
 	err = cmd.Start()
 	if err != nil {
-		t.Fatal(err)
+		c.Fatal(err)
 	}
 
 	go io.Copy(os.Stdout, stdout)

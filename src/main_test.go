@@ -45,13 +45,13 @@ func (s *MainSuite) TestStartAndKillMaster(c *C) {
 }
 
 func (s *MainSuite) TestPutAndGetFromReplicas(c *C) {
-	startReplicas(c)
+	startReplicas(c, false)
 	startMaster(c)
 	defer killAll(c)
 
 	client := NewMasterClient(MasterPort)
 
-	err := client.Put("foo", "bar")
+	err := client.Put("foo", "bar", make([]ReplicaDeath, 4))
 	c.Assert(err, Equals, nil)
 
 	// every replica should have the value
@@ -64,73 +64,73 @@ func (s *MainSuite) TestPutAndGetFromReplicas(c *C) {
 				c.Error("Get failed.")
 			}
 			wg.Done()
-			//c.Assert(err, Equals, nil)
-			//Is(*val, "bar")
+			c.Assert(err, Equals, nil)
+			c.Assert(*val, Equals, "bar")
 		}(i)
 	}
 	wg.Wait()
 }
 
 func (s *MainSuite) TestReplicaShouldAbortIfPutOnLockedKey(c *C) {
-	startReplicas(c)
+	startReplicas(c, false)
 	startMaster(c)
 	defer killAll(c)
 
 	client := NewReplicaClient(GetReplicaHost(0))
 
-	ok, err := client.TryPut("foo", "bar1", "tx1")
+	ok, err := client.TryPut("foo", "bar1", "tx1", ReplicaDontDie)
 	c.Assert(err, Equals, nil)
 	c.Assert(*ok, Equals, true)
 
-	ok, err = client.TryPut("foo", "bar2", "tx2")
+	ok, err = client.TryPut("foo", "bar2", "tx2", ReplicaDontDie)
 	c.Assert(err, Equals, nil)
 	c.Assert(*ok, Equals, false)
 
-	ok, err = client.Commit("tx1")
+	ok, err = client.Commit("tx1", ReplicaDontDie)
 	c.Assert(err, Equals, nil)
 	c.Assert(*ok, Equals, true)
 }
 
 func (s *MainSuite) TestReplicaShouldAbortIfDelOnLockedKey(c *C) {
-	startReplicas(c)
+	startReplicas(c, false)
 	startMaster(c)
 	defer killAll(c)
 
 	client := NewReplicaClient(GetReplicaHost(0))
 
-	ok, err := client.TryPut("foo", "bar1", "tx1")
+	ok, err := client.TryPut("foo", "bar1", "tx1", ReplicaDontDie)
 	c.Assert(err, Equals, nil)
 	c.Assert(*ok, Equals, true)
 
-	ok, err = client.TryDel("foo", "tx2")
+	ok, err = client.TryDel("foo", "tx2", ReplicaDontDie)
 	c.Assert(err, Equals, nil)
 	c.Assert(*ok, Equals, false)
 }
 
 func (s *MainSuite) TestReplicaShouldErrOnUnknownTxCommit(c *C) {
-	startReplicas(c)
+	startReplicas(c, false)
 	startMaster(c)
 	defer killAll(c)
 
 	client := NewReplicaClient(GetReplicaHost(0))
 
-	_, err := client.Commit("tx1")
+	_, err := client.Commit("tx1", ReplicaDontDie)
 	c.Assert(err, Not(Equals), nil)
 }
 
 func (s *MainSuite) TestReplicaShouldErrOnUnknownTxAbort(c *C) {
-	startReplicas(c)
+	startReplicas(c, false)
 	startMaster(c)
 	defer killAll(c)
 
 	client := NewReplicaClient(GetReplicaHost(0))
 
-	_, err := client.Abort("tx1")
+	_, err := client.Abort("tx1", ReplicaDontDie)
 	c.Assert(err, Not(Equals), nil)
 }
 
 func (s *MainSuite) TestReplicaShouldErrWithStress(c *C) {
-	startReplicas(c)
+	startReplicas(c, false)
 	startMaster(c)
 	defer killAll(c)
 
@@ -144,7 +144,7 @@ func (s *MainSuite) TestReplicaShouldErrWithStress(c *C) {
 			client := NewMasterClient(MasterPort)
 			failedCount := 0
 			for j := 0; j < 5; j++ {
-				err := client.Put(keys[j], "bar")
+				err := client.Put(keys[j], "bar", make([]ReplicaDeath, ReplicaCount))
 				if err != nil {
 					failedCount++
 				}
@@ -153,4 +153,53 @@ func (s *MainSuite) TestReplicaShouldErrWithStress(c *C) {
 		}()
 	}
 	wg.Wait()
+}
+
+func (s *MainSuite) TestTxShouldAbortIfReplicaDiesAtStartOfPut(c *C) {
+	startReplicas(c, false)
+	startMaster(c)
+	defer killAll(c)
+
+	client := NewMasterClient(MasterPort)
+
+	err := client.Put("foo", "bar", []ReplicaDeath{ReplicaDieBeforeProcessingMutateRequest, ReplicaDontDie, ReplicaDontDie, ReplicaDontDie})
+	c.Assert(err, Not(Equals), nil)
+}
+
+func (s *MainSuite) TestTxShouldAbortIfReplicaDiesAfterLoggingButBeforeSendingPrepared(c *C) {
+	startReplicas(c, false)
+	startMaster(c)
+	defer killAll(c)
+
+	client := NewMasterClient(MasterPort)
+
+	err := client.Put("foo", "bar", []ReplicaDeath{ReplicaDontDie, ReplicaDontDie, ReplicaDontDie, ReplicaDieAfterLoggingPrepared})
+	c.Assert(err, Not(Equals), nil)
+}
+
+func (s *MainSuite) TestTxShouldCommitIfReplicaDiesBeforeProcessingCommit(c *C) {
+	startReplicas(c, true)
+	startMaster(c)
+	defer killAll(c)
+
+	client := NewMasterClient(MasterPort)
+
+	err := client.Put("foo", "bar", []ReplicaDeath{ReplicaDontDie, ReplicaDieBeforeProcessingCommit, ReplicaDontDie, ReplicaDontDie})
+	c.Assert(err, Equals, nil)
+}
+
+func (s *MainSuite) TestTxShouldCommitIfReplicaDiesAfterLoggingCommit(c *C) {
+	startReplicas(c, true)
+	startMaster(c)
+	defer killAll(c)
+
+	client := NewMasterClient(MasterPort)
+
+	err := client.Put("foo", "bar", []ReplicaDeath{ReplicaDontDie, ReplicaDieAfterLoggingCommitted, ReplicaDontDie, ReplicaDontDie})
+	c.Assert(err, Equals, nil)
+
+	// Make sure the replica that died still committed
+	val, err := client.GetTest("foo", 1)
+	c.Assert(err, Equals, nil)
+	c.Assert(*val, Equals, "bar")
 }

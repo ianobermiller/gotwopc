@@ -30,13 +30,21 @@ func (c *ReplicaClient) tryConnect() (err error) {
 	return
 }
 
+func (c *ReplicaClient) call(serviceMethod string, args interface{}, reply interface{}) (err error) {
+	err = c.rpcClient.Call(serviceMethod, args, reply)
+	if err == rpc.ErrShutdown {
+		c.rpcClient = nil
+	}
+	return
+}
+
 func (c *ReplicaClient) TryPut(key string, value string, txid string, die ReplicaDeath) (Success *bool, err error) {
 	if err = c.tryConnect(); err != nil {
 		return
 	}
 
 	var reply ReplicaActionResult
-	err = c.rpcClient.Call("Replica.TryPut", &TxPutArgs{ key, value, txid, die }, &reply)
+	err = c.call("Replica.TryPut", &TxPutArgs{ key, value, txid, die }, &reply)
 	if err != nil {
 		log.Println("ReplicaClient.TryPut:", err)
 		return
@@ -53,7 +61,7 @@ func (c *ReplicaClient) TryDel(key string, txid string, die ReplicaDeath) (Succe
 	}
 
 	var reply ReplicaActionResult
-	err = c.rpcClient.Call("Replica.TryDel", &TxDelArgs{ key, txid, die }, &reply)
+	err = c.call("Replica.TryDel", &TxDelArgs{ key, txid, die }, &reply)
 	if err != nil {
 		log.Println("ReplicaClient.TryDel:", err)
 		return
@@ -70,7 +78,7 @@ func (c *ReplicaClient) Commit(txid string, die ReplicaDeath) (Success *bool, er
 	}
 
 	var reply ReplicaActionResult
-	err = c.rpcClient.Call("Replica.Commit", &TxArgs{ txid, die }, &reply)
+	err = c.call("Replica.Commit", &TxArgs{ txid, die }, &reply)
 	if err != nil {
 		log.Println("ReplicaClient.Commit:", err)
 		return
@@ -87,7 +95,7 @@ func (c *ReplicaClient) Abort(txid string, die ReplicaDeath) (Success *bool, err
 	}
 
 	var reply ReplicaActionResult
-	err = c.rpcClient.Call("Replica.Abort", &TxArgs{ txid, die }, &reply)
+	err = c.call("Replica.Abort", &TxArgs{ txid, die }, &reply)
 	if err != nil {
 		log.Println("ReplicaClient.Abort:", err)
 		return
@@ -104,7 +112,7 @@ func (c *ReplicaClient) Get(key string) (Value *string, err error) {
 	}
 
 	var reply ReplicaGetResult
-	err = c.rpcClient.Call("Replica.Get", &ReplicaKeyArgs{ key }, &reply)
+	err = c.call("Replica.Get", &ReplicaKeyArgs{ key }, &reply)
 	if err != nil {
 		log.Println("ReplicaClient.Get:", err)
 		return
@@ -121,7 +129,7 @@ func (c *ReplicaClient) Ping(key string) (Value *string, err error) {
 	}
 
 	var reply ReplicaGetResult
-	err = c.rpcClient.Call("Replica.Ping", &ReplicaKeyArgs{ key }, &reply)
+	err = c.call("Replica.Ping", &ReplicaKeyArgs{ key }, &reply)
 	if err != nil {
 		log.Println("ReplicaClient.Ping:", err)
 		return

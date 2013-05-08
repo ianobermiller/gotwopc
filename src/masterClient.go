@@ -30,13 +30,21 @@ func (c *MasterClient) tryConnect() (err error) {
 	return
 }
 
+func (c *MasterClient) call(serviceMethod string, args interface{}, reply interface{}) (err error) {
+	err = c.rpcClient.Call(serviceMethod, args, reply)
+	if err == rpc.ErrShutdown {
+		c.rpcClient = nil
+	}
+	return
+}
+
 func (c *MasterClient) Get(key string) (Value *string, err error) {
 	if err = c.tryConnect(); err != nil {
 		return
 	}
 
 	var reply GetResult
-	err = c.rpcClient.Call("Master.Get", &GetArgs{ key }, &reply)
+	err = c.call("Master.Get", &GetArgs{ key }, &reply)
 	if err != nil {
 		log.Println("MasterClient.Get:", err)
 		return
@@ -53,7 +61,7 @@ func (c *MasterClient) GetTest(key string, replicanum int) (Value *string, err e
 	}
 
 	var reply GetResult
-	err = c.rpcClient.Call("Master.GetTest", &GetTestArgs{ key, replicanum }, &reply)
+	err = c.call("Master.GetTest", &GetTestArgs{ key, replicanum }, &reply)
 	if err != nil {
 		log.Println("MasterClient.GetTest:", err)
 		return
@@ -70,7 +78,7 @@ func (c *MasterClient) Del(key string) (err error) {
 	}
 
 	var reply int
-	err = c.rpcClient.Call("Master.Del", &KeyArgs{ key }, &reply)
+	err = c.call("Master.Del", &KeyArgs{ key }, &reply)
 	if err != nil {
 		log.Println("MasterClient.Del:", err)
 		return
@@ -79,13 +87,13 @@ func (c *MasterClient) Del(key string) (err error) {
 	return
 }
 
-func (c *MasterClient) Put(key string, value string) (err error) {
+func (c *MasterClient) Put(key string, value string, replicadeaths []ReplicaDeath) (err error) {
 	if err = c.tryConnect(); err != nil {
 		return
 	}
 
 	var reply int
-	err = c.rpcClient.Call("Master.Put", &KeyValueArgs{ key, value }, &reply)
+	err = c.call("Master.Put", &KeyValueArgs{ key, value, replicadeaths }, &reply)
 	if err != nil {
 		log.Println("MasterClient.Put:", err)
 		return
@@ -100,7 +108,7 @@ func (c *MasterClient) Ping(key string) (Value *string, err error) {
 	}
 
 	var reply GetResult
-	err = c.rpcClient.Call("Master.Ping", &KeyArgs{ key }, &reply)
+	err = c.call("Master.Ping", &KeyArgs{ key }, &reply)
 	if err != nil {
 		log.Println("MasterClient.Ping:", err)
 		return

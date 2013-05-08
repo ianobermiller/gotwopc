@@ -53,7 +53,11 @@ type Replica struct {
 	txs            map[string]*Tx
 	lockedKeys     map[string]bool
 	log            *logger
+	didSuicide     bool
 }
+
+var killedSelfMarker = "::justkilledself::"
+var firstRestartAfterSuicideMarker = "::firstrestartaftersuicide::"
 
 func NewReplica(num int) *Replica {
 	l := newLogger(fmt.Sprintf("logs/replica%v.txt", num))
@@ -63,7 +67,8 @@ func NewReplica(num int) *Replica {
 		newKeyValueStore(fmt.Sprintf("data/replica%v/temp", num)),
 		make(map[string]*Tx),
 		make(map[string]bool),
-		l}
+		l,
+		false}
 }
 
 func (r *Replica) TryPut(args *TxPutArgs, reply *ReplicaActionResult) (err error) {
@@ -76,7 +81,7 @@ func (r *Replica) TryDel(args *TxDelArgs, reply *ReplicaActionResult) (err error
 }
 
 func (r *Replica) tryMutate(key string, txId string, die ReplicaDeath, op Operation, f func() error, reply *ReplicaActionResult) (err error) {
-	dieIf(die, ReplicaDieBeforeProcessingMutateRequest)
+	r.dieIf(die, ReplicaDieBeforeProcessingMutateRequest)
 	reply.Success = false
 
 	r.txs[txId] = &Tx{txId, key, op, Started}
@@ -85,8 +90,8 @@ func (r *Replica) tryMutate(key string, txId string, die ReplicaDeath, op Operat
 		// Key is currently being modified, Abort
 		log.Println("Received", op.String(), "for locked key:", key, "in tx:", txId, " Aborting")
 		r.txs[txId].state = Aborted
-		r.log.write(txId, Aborted)
-		dieIf(die, ReplicaDieAfterAbortingDueToLock)
+		r.log.writeState(txId, Aborted)
+		r.dieIf(die, ReplicaDieAfterAbortingDueToLock)
 		return nil
 	}
 
@@ -97,25 +102,25 @@ func (r *Replica) tryMutate(key string, txId string, die ReplicaDeath, op Operat
 		if err != nil {
 			log.Println("Unable to", op.String(), "uncommited val for transaction:", txId, "key:", key, ", Aborting")
 			r.txs[txId].state = Aborted
-			r.log.write(txId, Aborted)
+			r.log.writeState(txId, Aborted)
 			delete(r.lockedKeys, key)
 			return
 		}
 	}
 
-	dieIf(die, ReplicaDieAfterWritingToTempStore)
+	r.dieIf(die, ReplicaDieAfterWritingToTempStore)
 
 	r.txs[txId].state = Prepared
-	r.log.write(txId, Prepared, op.String(), key)
+	r.log.writeOp(txId, Prepared, op, key)
 	reply.Success = true
 
-	dieIf(die, ReplicaDieAfterLoggingPrepared)
+	r.dieIf(die, ReplicaDieAfterLoggingPrepared)
 
 	return
 }
 
 func (r *Replica) Commit(args *TxArgs, reply *ReplicaActionResult) (err error) {
-	dieIf(args.Die, ReplicaDieBeforeProcessingCommit)
+	r.dieIf(args.Die, ReplicaDieBeforeProcessingCommit)
 
 	reply.Success = false
 
@@ -123,7 +128,8 @@ func (r *Replica) Commit(args *TxArgs, reply *ReplicaActionResult) (err error) {
 
 	tx, hasTx := r.txs[txId]
 	if !hasTx {
-		// Just ignore, we've never heard of this transaction
+		// Error! We've never heard of this transaction
+		log.Println("Received commit for unknown transaction:", txId)
 		return errors.New(fmt.Sprint("Received commit for unknown transaction:", txId))
 	}
 
@@ -142,29 +148,29 @@ func (r *Replica) Commit(args *TxArgs, reply *ReplicaActionResult) (err error) {
 			return errors.New(fmt.Sprint("Unable to find val for uncommitted tx:", txId, "key:", tx.key))
 		}
 		err = r.committedStore.put(tx.key, val)
-		dieIf(args.Die, ReplicaDieAfterWritingToCommittedStore)
+		r.dieIf(args.Die, ReplicaDieAfterWritingToCommittedStore)
 		if err != nil {
 			return errors.New(fmt.Sprint("Unable to put committed val for tx:", txId, "key:", tx.key))
 		}
 
 		err = r.tempStore.del(tx.key)
-		dieIf(args.Die, ReplicaDieAfterDeletingFromTempStore)
+		r.dieIf(args.Die, ReplicaDieAfterDeletingFromTempStore)
 		if err != nil {
 			fmt.Println("Unable to del committed val for tx:", txId, "key:", tx.key)
 		}
 	case DelOp:
 		err = r.committedStore.del(tx.key)
-		dieIf(args.Die, ReplicaDieAfterDeletingFromComittedStore)
+		r.dieIf(args.Die, ReplicaDieAfterDeletingFromComittedStore)
 		if err != nil {
 			return errors.New(fmt.Sprint("Unable to commit del val for tx:", txId, "key:", tx.key))
 		}
 	}
 
-	r.log.write(txId, Committed)
+	r.log.writeState(txId, Committed)
 	delete(r.txs, txId)
 	reply.Success = true
 
-	dieIf(args.Die, ReplicaDieAfterLoggingCommitted)
+	r.dieIf(args.Die, ReplicaDieAfterLoggingCommitted)
 	return nil
 }
 
@@ -198,7 +204,7 @@ func (r *Replica) Abort(args *TxArgs, reply *ReplicaActionResult) (err error) {
 		// nothing to undo here
 	}
 
-	r.log.write(txId, Aborted)
+	r.log.writeState(txId, Aborted)
 	delete(r.txs, txId)
 	reply.Success = true
 	return nil
@@ -213,22 +219,64 @@ func (r *Replica) Get(args *ReplicaKeyArgs, reply *ReplicaGetResult) (err error)
 	return
 }
 
-func (m *Replica) Ping(args *ReplicaKeyArgs, reply *ReplicaGetResult) (err error) {
+func (r *Replica) Ping(args *ReplicaKeyArgs, reply *ReplicaGetResult) (err error) {
 	reply.Value = args.Key
 	return nil
 }
 
+func (r *Replica) recover() (err error) {
+	entries, err := r.log.read()
+	if err != nil {
+		return
+	}
+
+	r.didSuicide = false
+	for _, entry := range entries {
+		switch entry.txId {
+		case killedSelfMarker:
+			r.didSuicide = true
+			continue
+		case firstRestartAfterSuicideMarker:
+			r.didSuicide = false
+			continue
+		}
+
+		switch entry.state {
+		case Started:
+			// abort
+		case Prepared:
+			r.lockedKeys[entry.key] = true
+			r.txs[entry.txId] = &Tx{entry.txId, entry.key, entry.op, Prepared}
+		case Committed:
+			r.txs[entry.txId] = &Tx{entry.txId, entry.key, entry.op, Committed}
+		case Aborted:
+			r.txs[entry.txId] = &Tx{entry.txId, entry.key, entry.op, Aborted}
+		}
+	}
+
+	if r.didSuicide {
+		r.log.writeSpecial(firstRestartAfterSuicideMarker)
+	}
+	return
+}
+
 func runReplica(num int) {
 	replica := NewReplica(num)
+	err := replica.recover()
+	if err != nil {
+		log.Fatal("Error during recovery: ", err)
+	}
+
 	server := rpc.NewServer()
 	server.Register(replica)
 	log.Println("Replica", num, "listening on port", ReplicaPortStart+num)
 	http.ListenAndServe(GetReplicaHost(num), server)
 }
 
-func dieIf(actual ReplicaDeath, expected ReplicaDeath) {
-	if actual == expected {
+func (r *Replica) dieIf(actual ReplicaDeath, expected ReplicaDeath) {
+	if !r.didSuicide && actual == expected {
 		log.Println("Killing self as requested at", expected)
+		r.log.writeSpecial(killedSelfMarker)
 		os.Exit(1)
 	}
 }

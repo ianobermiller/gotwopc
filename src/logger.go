@@ -8,12 +8,20 @@ import (
 	"strings"
 )
 
+type logEntry struct {
+	txId  string
+	state TxState
+	op    Operation
+	key   string
+}
+
 type logRequest struct {
 	record []string
 	done   chan int
 }
 
 type logger struct {
+	path      string
 	file      *os.File
 	csvWriter *csv.Writer
 	requests  chan *logRequest
@@ -26,7 +34,7 @@ func newLogger(logFilePath string) *logger {
 		log.Fatalln("newLogger:", err)
 	}
 
-	l := &logger{file, csv.NewWriter(file), make(chan *logRequest)}
+	l := &logger{logFilePath, file, csv.NewWriter(file), make(chan *logRequest)}
 
 	go l.loggingLoop()
 
@@ -50,12 +58,40 @@ func (l *logger) loggingLoop() {
 	}
 }
 
-func (l *logger) write(txId string, state TxState, args ...string) {
-	record := []string{txId, state.String()}
-	record = append(record, args...)
+func (l *logger) writeSpecial(directive string) {
+	l.writeOp(directive, NoState, NoOp, "")
+}
+
+func (l *logger) writeState(txId string, state TxState) {
+	l.writeOp(txId, state, NoOp, "")
+}
+
+func (l *logger) writeOp(txId string, state TxState, op Operation, key string) {
+	record := []string{txId, state.String(), op.String(), key}
 	done := make(chan int)
 	l.requests <- &logRequest{record, done}
 	<-done
+}
+
+func (l *logger) read() (entries []logEntry, err error) {
+	entries = make([]logEntry, 0)
+	file, err := os.OpenFile(l.path, os.O_RDONLY, 0)
+	if err != nil {
+		if os.IsNotExist(err) {
+			err = nil
+		}
+		return
+	}
+	r := csv.NewReader(file)
+	records, err := r.ReadAll()
+	if err != nil {
+		return
+	}
+
+	for _, record := range records {
+		entries = append(entries, logEntry{record[0], ParseTxState(record[1]), ParseOperation(record[2]), record[3]})
+	}
+	return
 }
 
 type ConditionalWriter struct{}

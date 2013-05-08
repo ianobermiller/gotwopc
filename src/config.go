@@ -10,7 +10,7 @@ const ReplicaPortStart = 7171
 type TxState int
 
 const (
-	_ TxState = iota
+	NoState TxState = iota
 	Started
 	Prepared
 	Committed
@@ -31,9 +31,24 @@ func (s TxState) String() string {
 	return "INVALID"
 }
 
+func ParseTxState(s string) TxState {
+	switch s {
+	case "STARTED":
+		return Started
+	case "PREPARED":
+		return Prepared
+	case "COMMITTED":
+		return Committed
+	case "ABORTED":
+		return Aborted
+	}
+	return NoState
+}
+
 type Operation int
 
 const (
+	NoOp  Operation = iota
 	PutOp Operation = iota
 	DelOp
 )
@@ -48,15 +63,28 @@ func (s Operation) String() string {
 	return "INVALID"
 }
 
+func ParseOperation(s string) Operation {
+	switch s {
+	case "PUT":
+		return PutOp
+	case "DEL":
+		return DelOp
+	}
+	return NoOp
+}
+
 type ReplicaDeath int
 
 const (
 	ReplicaDontDie ReplicaDeath = iota
+
+	// During mutation
 	ReplicaDieBeforeProcessingMutateRequest
 	ReplicaDieAfterAbortingDueToLock
 	ReplicaDieAfterWritingToTempStore
 	ReplicaDieAfterLoggingPrepared
 
+	// During commit
 	ReplicaDieBeforeProcessingCommit
 	ReplicaDieAfterWritingToCommittedStore
 	ReplicaDieAfterDeletingFromTempStore
