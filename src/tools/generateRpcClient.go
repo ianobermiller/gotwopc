@@ -42,6 +42,14 @@ func (c *{{.Name}}Client) tryConnect() (err error) {
 	c.rpcClient = rpcClient
 	return
 }
+
+func (c *{{.Name}}Client) call(serviceMethod string, args interface{}, reply interface{}) (err error) {
+	err = c.rpcClient.Call(serviceMethod, args, reply)
+	if err == rpc.ErrShutdown {
+		c.rpcClient = nil
+	}
+	return
+}
 `
 
 const funcTemplate = `
@@ -51,7 +59,7 @@ func (c *{{.TypeName}}Client) {{.FunctionName}}({{.FieldsAsParams}}) ({{if not .
 	}
 
 	var {{.ReplyName}} {{.ReplyType}}
-	err = c.rpcClient.Call("{{.TypeName}}.{{.FunctionName}}", &{{.ParamType}}{ {{.FieldsAsArgs}} }, &{{.ReplyName}})
+	err = c.call("{{.TypeName}}.{{.FunctionName}}", &{{.ParamType}}{ {{.FieldsAsArgs}} }, &{{.ReplyName}})
 	if err != nil {
 		log.Println("{{.TypeName}}Client.{{.FunctionName}}:", err)
 		return
@@ -124,9 +132,14 @@ func GenerateRpcClient(serverFile string) {
 							t := &Type{ts.Name.Name, make([]Field, len(st.Fields.List)), make([]RpcFuncDecl, 0), "", "", "reply", fmt.Sprintf("*%v", ts.Name.Name), false}
 							types[ts.Name.Name] = t
 							for i, field := range st.Fields.List {
-								ident, ok := field.Type.(*ast.Ident)
-								if ok {
-									t.Fields[i] = Field{field.Names[0].Name, ident.Name}
+								switch fieldType := field.Type.(type) {
+								case *ast.ArrayType:
+									fieldArrayType, ok := fieldType.Elt.(*ast.Ident)
+									if ok {
+										t.Fields[i] = Field{field.Names[0].Name, "[]" + fieldArrayType.Name}
+									}
+								case *ast.Ident:
+									t.Fields[i] = Field{field.Names[0].Name, fieldType.Name}
 								}
 							}
 
