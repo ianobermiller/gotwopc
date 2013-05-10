@@ -25,6 +25,14 @@ func (s *KeyValueStoreSuite) TestGetWithoutPut(c *C) {
 	}
 }
 
+func (s *KeyValueStoreSuite) TestDeleteNonexistent(c *C) {
+	store := newKeyValueStore(testDbPath)
+	err := store.del("nonexistentvalue")
+	if err != nil {
+		c.Error("KVS should not error when deleting nonexistent value: ", err)
+	}
+}
+
 func (s *KeyValueStoreSuite) TestKeyValueStoreAll(c *C) {
 	store := newKeyValueStore(testDbPath)
 	err := store.put("foo", "bar")

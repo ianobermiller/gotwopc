@@ -30,8 +30,8 @@ func (s *keyValueStore) put(key string, value string) (err error) {
 }
 
 func (s *keyValueStore) del(key string) (err error) {
-	err = os.Remove(s.getPath(key))
-	return
+	os.Remove(s.getPath(key))
+	return nil
 }
 
 func (s *keyValueStore) get(key string) (value string, err error) {
