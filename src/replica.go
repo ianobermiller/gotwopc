@@ -91,7 +91,6 @@ func (r *Replica) tryMutate(key string, txId string, die ReplicaDeath, op Operat
 		log.Println("Received", op.String(), "for locked key:", key, "in tx:", txId, " Aborting")
 		r.txs[txId].state = Aborted
 		r.log.writeState(txId, Aborted)
-		r.dieIf(die, ReplicaDieAfterAbortingDueToLock)
 		return nil
 	}
 
@@ -107,8 +106,6 @@ func (r *Replica) tryMutate(key string, txId string, die ReplicaDeath, op Operat
 			return
 		}
 	}
-
-	r.dieIf(die, ReplicaDieAfterWritingToTempStore)
 
 	r.txs[txId].state = Prepared
 	r.log.writeOp(txId, Prepared, op, key)
@@ -148,7 +145,6 @@ func (r *Replica) Commit(args *TxArgs, reply *ReplicaActionResult) (err error) {
 			return errors.New(fmt.Sprint("Unable to find val for uncommitted tx:", txId, "key:", tx.key))
 		}
 		err = r.committedStore.put(tx.key, val)
-		r.dieIf(args.Die, ReplicaDieAfterWritingToCommittedStore)
 		if err != nil {
 			return errors.New(fmt.Sprint("Unable to put committed val for tx:", txId, "key:", tx.key))
 		}
@@ -160,7 +156,6 @@ func (r *Replica) Commit(args *TxArgs, reply *ReplicaActionResult) (err error) {
 		}
 	case DelOp:
 		err = r.committedStore.del(tx.key)
-		r.dieIf(args.Die, ReplicaDieAfterDeletingFromComittedStore)
 		if err != nil {
 			return errors.New(fmt.Sprint("Unable to commit del val for tx:", txId, "key:", tx.key))
 		}

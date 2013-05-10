@@ -80,15 +80,11 @@ const (
 
 	// During mutation
 	ReplicaDieBeforeProcessingMutateRequest
-	ReplicaDieAfterAbortingDueToLock
-	ReplicaDieAfterWritingToTempStore
 	ReplicaDieAfterLoggingPrepared
 
 	// During commit
 	ReplicaDieBeforeProcessingCommit
-	ReplicaDieAfterWritingToCommittedStore
 	ReplicaDieAfterDeletingFromTempStore
-	ReplicaDieAfterDeletingFromComittedStore
 	ReplicaDieAfterLoggingCommitted
 )
 
