@@ -68,8 +68,12 @@ func NewReplica(num int) *Replica {
 		false}
 }
 
+func (r *Replica) GetTempStoreKey(txId string, key string) string {
+	return txId + "__" + key
+}
+
 func (r *Replica) TryPut(args *TxPutArgs, reply *ReplicaActionResult) (err error) {
-	writeToTempStore := func() error { return r.tempStore.put(args.Key, args.Value) }
+	writeToTempStore := func() error { return r.tempStore.put(r.GetTempStoreKey(args.TxId, args.Key), args.Value) }
 	return r.tryMutate(args.Key, args.TxId, args.Die, PutOp, writeToTempStore, reply)
 }
 
@@ -137,7 +141,7 @@ func (r *Replica) Commit(args *TxArgs, reply *ReplicaActionResult) (err error) {
 
 	switch tx.op {
 	case PutOp:
-		val, err := r.tempStore.get(tx.key)
+		val, err := r.tempStore.get(r.GetTempStoreKey(txId, tx.key))
 		if err != nil {
 			return errors.New(fmt.Sprint("Unable to find val for uncommitted tx:", txId, "key:", tx.key))
 		}
@@ -158,7 +162,7 @@ func (r *Replica) Commit(args *TxArgs, reply *ReplicaActionResult) (err error) {
 
 	// Delete the temp data only after committed, in case we crash after deleting, but before committing
 	if tx.op == PutOp {
-		err = r.tempStore.del(tx.key)
+		err = r.tempStore.del(r.GetTempStoreKey(txId, tx.key))
 		r.dieIf(args.Die, ReplicaDieAfterDeletingFromTempStore)
 		if err != nil {
 			fmt.Println("Unable to del committed val for tx:", txId, "key:", tx.key)
@@ -191,7 +195,7 @@ func (r *Replica) Abort(args *TxArgs, reply *ReplicaActionResult) (err error) {
 	switch tx.op {
 	case PutOp:
 		// We no longer need the temp stored value
-		err := r.tempStore.del(tx.key)
+		err := r.tempStore.del(r.GetTempStoreKey(txId, tx.key))
 		if err != nil {
 			fmt.Println("Unable to del val for uncommitted tx:", txId, "key:", tx.key)
 		}
