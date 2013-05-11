@@ -51,9 +51,11 @@ func startReplica(c *C, n int, shouldRestart bool) {
 
 	if shouldRestart {
 		go func(cmd *exec.Cmd) {
-			cmd.Wait()
-			if replicas[n] != nil {
-				startReplica(c, n, shouldRestart)
+			if cmd != nil {
+				cmd.Wait()
+				if replicas[n] != nil {
+					startReplica(c, n, shouldRestart)
+				}
 			}
 		}(replicas[n])
 	}
@@ -82,11 +84,12 @@ func killMaster(c *C) {
 			return err != nil
 		},
 		"Master killed successfully.",
-		"Able to Ping after running Master.")
+		"Able to Ping after killing Master.")
+
 }
 
 func verify(c *C, check func() bool, successMessage string, failMessage string) {
-	for i := 0; i < 500; i++ {
+	for i := 0; i < 1000; i++ {
 		if check() {
 			log.Println(successMessage)
 			return
@@ -96,16 +99,42 @@ func verify(c *C, check func() bool, successMessage string, failMessage string) 
 	c.Fatal(failMessage)
 }
 
-func killAll(c *C) {
-	killMaster(c)
-	for i, replicaCmd := range replicas {
-		if replicaCmd == nil {
-			continue
-		}
-
-		replicas[i] = nil
-		replicaCmd.Process.Kill()
+func killReplica(c *C, i int) {
+	replicaCmd := replicas[i]
+	if replicaCmd == nil {
+		return
 	}
+
+	replicas[i] = nil
+	replicaCmd.Process.Kill()
+
+	client := NewReplicaClient(GetReplicaHost(i))
+	verify(c,
+		func() bool {
+			_, err := client.Ping("whatever")
+			return err != nil
+		},
+		fmt.Sprintf("Replica %v killed successfully.", i),
+		fmt.Sprintf("Able to Ping after killing Replica %v.", i))
+
+}
+
+func killAll(c *C) {
+	var wg sync.WaitGroup
+	wg.Add(1 + ReplicaCount)
+
+	go func() {
+		killMaster(c)
+		wg.Done()
+	}()
+
+	for i, _ := range replicas {
+		go func(c *C, i int) {
+			killReplica(c, i)
+			wg.Done()
+		}(c, i)
+	}
+	wg.Wait()
 }
 
 func startCmd(c *C, path string, args ...string) *exec.Cmd {

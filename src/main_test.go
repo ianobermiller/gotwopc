@@ -20,16 +20,18 @@ func (s *MainSuite) SetUpSuite(c *C) {
 	log.SetPrefix("C  ")
 	log.SetFlags(0)
 	log.SetOutput(NewConditionalWriter())
-
-	// Clean out data from old runs
-	os.RemoveAll("data")
-	os.RemoveAll("logs")
 }
 
 func (s *MainSuite) SetUpTest(c *C) {
 	// Clean out data from old runs
-	os.RemoveAll("data")
-	os.RemoveAll("logs")
+	err := os.RemoveAll("data")
+	if err != nil {
+		c.Fatal("RemoveAll(data) failed: ", err)
+	}
+	err = os.RemoveAll("logs")
+	if err != nil {
+		c.Fatal("RemoveAll(logs) failed: ", err)
+	}
 }
 
 func (s *MainSuite) TearDownTest(c *C) {
