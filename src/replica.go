@@ -56,9 +56,6 @@ type Replica struct {
 	didSuicide     bool
 }
 
-var killedSelfMarker = "::justkilledself::"
-var firstRestartAfterSuicideMarker = "::firstrestartaftersuicide::"
-
 func NewReplica(num int) *Replica {
 	l := newLogger(fmt.Sprintf("logs/replica%v.txt", num))
 	return &Replica{

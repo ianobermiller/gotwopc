@@ -7,6 +7,10 @@ import (
 const MasterPort = "localhost:7170"
 const ReplicaPortStart = 7171
 
+func GetReplicaHost(replicaNum int) string {
+	return fmt.Sprintf("localhost:%v", ReplicaPortStart+replicaNum)
+}
+
 type TxState int
 
 const (
@@ -94,6 +98,5 @@ const (
 	MasterDontDie MasterDeath = iota
 )
 
-func GetReplicaHost(replicaNum int) string {
-	return fmt.Sprintf("localhost:%v", ReplicaPortStart+replicaNum)
-}
+var killedSelfMarker = "::justkilledself::"
+var firstRestartAfterSuicideMarker = "::firstrestartaftersuicide::"

@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"net/http"
 	"net/rpc"
+	"os"
 	"sync"
 	"time"
 )
@@ -19,6 +20,7 @@ type Master struct {
 	replicaCount int
 	replicas     []*ReplicaClient
 	log          *logger
+	didSuicide   bool
 }
 
 type PutArgs struct {
@@ -55,7 +57,7 @@ func NewMaster(replicaCount int) *Master {
 	for i := 0; i < replicaCount; i++ {
 		replicas[i] = NewReplicaClient(GetReplicaHost(i))
 	}
-	return &Master{replicaCount, replicas, l}
+	return &Master{replicaCount, replicas, l, false}
 }
 
 func (m *Master) Get(args *GetArgs, reply *GetResult) (err error) {
@@ -167,7 +169,43 @@ func (m *Master) Ping(args *PingArgs, reply *GetResult) (err error) {
 }
 
 func (m *Master) Recover() (err error) {
-	return nil
+	entries, err := m.log.read()
+	if err != nil {
+		return
+	}
+
+	m.didSuicide = false
+	for _, entry := range entries {
+		switch entry.txId {
+		case killedSelfMarker:
+			m.didSuicide = true
+			continue
+		case firstRestartAfterSuicideMarker:
+			m.didSuicide = false
+			continue
+		}
+
+		switch entry.state {
+		case Started:
+			// abort
+		case Prepared:
+		case Committed:
+		case Aborted:
+		}
+	}
+
+	if m.didSuicide {
+		m.log.writeSpecial(firstRestartAfterSuicideMarker)
+	}
+	return
+}
+
+func (m *Master) dieIf(actual MasterDeath, expected MasterDeath) {
+	if !m.didSuicide && actual == expected {
+		log.Println("Killing self as requested at", expected)
+		m.log.writeSpecial(killedSelfMarker)
+		os.Exit(1)
+	}
 }
 
 func runMaster(replicaCount int) {
