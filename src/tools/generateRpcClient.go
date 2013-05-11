@@ -173,49 +173,56 @@ func GenerateRpcClient(serverFile string) {
 				recv, ok := d.Recv.List[0].Type.(*ast.StarExpr)
 				if ok {
 					class := recv.X.(*ast.Ident)
-					if class.IsExported() {
-						paramNames := make([]string, 2)
-						paramTypes := make([]string, 2)
-						for i := 0; i < 2; i++ {
-							paramNames[i] = d.Type.Params.List[i].Names[0].Name
-							param, ok := d.Type.Params.List[i].Type.(*ast.StarExpr)
-							if ok {
-								paramTypes[i] = param.X.(*ast.Ident).Name
-							} else {
-								break
-							}
-						}
-						if ok {
-							t := types[class.Name]
-							paramType := types[paramTypes[0]]
-							returnName := paramNames[1]
-							returnType := paramTypes[1]
-							flattenedReturn := false
-							rt, ok := types[paramTypes[1]]
-							if ok {
-								returnName = rt.ReturnName
-								returnType = rt.ReturnType
-								flattenedReturn = rt.FlattenedReturn
-							}
-							noReturnValue := false
-							if paramNames[1] == "_" {
-								paramNames[1] = "reply"
-								noReturnValue = true
-							}
+					if !class.IsExported() {
+						continue
+					}
 
-							t.Funcs = append(t.Funcs, RpcFuncDecl{
-								class.Name,
-								d.Name.Name,
-								paramTypes[0],
-								paramType.FieldsAsParams,
-								paramType.FieldsAsArgs,
-								paramNames[1],
-								paramTypes[1],
-								returnName,
-								returnType,
-								flattenedReturn,
-								noReturnValue})
+					paramNames := make([]string, 2)
+					paramTypes := make([]string, 2)
+
+					paramsOk := true
+					for i := 0; i < 2; i++ {
+						paramNames[i] = d.Type.Params.List[i].Names[0].Name
+						param, ok := d.Type.Params.List[i].Type.(*ast.StarExpr)
+
+						if !ok {
+							paramsOk = false
+							break
 						}
+
+						paramTypes[i] = param.X.(*ast.Ident).Name
+					}
+
+					if paramsOk {
+						t := types[class.Name]
+						paramType := types[paramTypes[0]]
+						returnName := paramNames[1]
+						returnType := paramTypes[1]
+						flattenedReturn := false
+						rt, ok := types[paramTypes[1]]
+						if ok {
+							returnName = rt.ReturnName
+							returnType = rt.ReturnType
+							flattenedReturn = rt.FlattenedReturn
+						}
+						noReturnValue := false
+						if paramNames[1] == "_" {
+							paramNames[1] = "reply"
+							noReturnValue = true
+						}
+
+						t.Funcs = append(t.Funcs, RpcFuncDecl{
+							class.Name,
+							d.Name.Name,
+							paramTypes[0],
+							paramType.FieldsAsParams,
+							paramType.FieldsAsArgs,
+							paramNames[1],
+							paramTypes[1],
+							returnName,
+							returnType,
+							flattenedReturn,
+							noReturnValue})
 					}
 				}
 			}
