@@ -72,13 +72,13 @@ func (c *MasterClient) GetTest(key string, replicanum int) (Value *string, err e
 	return
 }
 
-func (c *MasterClient) Del(key string, replicadeaths []ReplicaDeath) (err error) {
+func (c *MasterClient) Del(key string, masterdeath MasterDeath, replicadeaths []ReplicaDeath) (err error) {
 	if err = c.tryConnect(); err != nil {
 		return
 	}
 
 	var reply int
-	err = c.call("Master.Del", &DelArgs{ key, replicadeaths }, &reply)
+	err = c.call("Master.Del", &DelArgs{ key, masterdeath, replicadeaths }, &reply)
 	if err != nil {
 		log.Println("MasterClient.Del:", err)
 		return
@@ -87,13 +87,13 @@ func (c *MasterClient) Del(key string, replicadeaths []ReplicaDeath) (err error)
 	return
 }
 
-func (c *MasterClient) Put(key string, value string, replicadeaths []ReplicaDeath) (err error) {
+func (c *MasterClient) Put(key string, value string, masterdeath MasterDeath, replicadeaths []ReplicaDeath) (err error) {
 	if err = c.tryConnect(); err != nil {
 		return
 	}
 
 	var reply int
-	err = c.call("Master.Put", &PutArgs{ key, value, replicadeaths }, &reply)
+	err = c.call("Master.Put", &PutArgs{ key, value, masterdeath, replicadeaths }, &reply)
 	if err != nil {
 		log.Println("MasterClient.Put:", err)
 		return

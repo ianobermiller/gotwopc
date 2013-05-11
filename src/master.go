@@ -26,6 +26,7 @@ type Master struct {
 type PutArgs struct {
 	Key           string
 	Value         string
+	MasterDeath   MasterDeath
 	ReplicaDeaths []ReplicaDeath
 }
 
@@ -40,6 +41,7 @@ type GetTestArgs struct {
 
 type DelArgs struct {
 	Key           string
+	MasterDeath   MasterDeath
 	ReplicaDeaths []ReplicaDeath
 }
 
