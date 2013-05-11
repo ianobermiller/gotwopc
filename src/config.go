@@ -88,6 +88,12 @@ const (
 	ReplicaDieAfterLoggingCommitted
 )
 
+type MasterDeath int
+
+const (
+	MasterDontDie MasterDeath = iota
+)
+
 func GetReplicaHost(replicaNum int) string {
 	return fmt.Sprintf("localhost:%v", ReplicaPortStart+replicaNum)
 }

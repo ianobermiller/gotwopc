@@ -148,12 +148,6 @@ func (r *Replica) Commit(args *TxArgs, reply *ReplicaActionResult) (err error) {
 		if err != nil {
 			return errors.New(fmt.Sprint("Unable to put committed val for tx:", txId, "key:", tx.key))
 		}
-
-		err = r.tempStore.del(tx.key)
-		r.dieIf(args.Die, ReplicaDieAfterDeletingFromTempStore)
-		if err != nil {
-			fmt.Println("Unable to del committed val for tx:", txId, "key:", tx.key)
-		}
 	case DelOp:
 		err = r.committedStore.del(tx.key)
 		if err != nil {
@@ -164,6 +158,15 @@ func (r *Replica) Commit(args *TxArgs, reply *ReplicaActionResult) (err error) {
 	r.log.writeState(txId, Committed)
 	delete(r.txs, txId)
 	reply.Success = true
+
+	// Delete the temp data only after committed, in case we crash after deleting, but before committing
+	if tx.op == PutOp {
+		err = r.tempStore.del(tx.key)
+		r.dieIf(args.Die, ReplicaDieAfterDeletingFromTempStore)
+		if err != nil {
+			fmt.Println("Unable to del committed val for tx:", txId, "key:", tx.key)
+		}
+	}
 
 	r.dieIf(args.Die, ReplicaDieAfterLoggingCommitted)
 	return nil

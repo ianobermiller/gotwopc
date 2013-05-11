@@ -68,6 +68,10 @@ func startReplica(c *C, n int, shouldRestart bool) {
 }
 
 func killMaster(c *C) {
+	if masterCmd == nil {
+		return
+	}
+
 	masterCmd.Process.Kill()
 	masterCmd = nil
 	client := NewMasterClient(MasterPort)
@@ -95,6 +99,10 @@ func verify(c *C, check func() bool, successMessage string, failMessage string) 
 func killAll(c *C) {
 	killMaster(c)
 	for i, replicaCmd := range replicas {
+		if replicaCmd == nil {
+			continue
+		}
+
 		replicas[i] = nil
 		replicaCmd.Process.Kill()
 	}

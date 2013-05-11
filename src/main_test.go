@@ -32,6 +32,10 @@ func (s *MainSuite) SetUpTest(c *C) {
 	os.RemoveAll("logs")
 }
 
+func (s *MainSuite) TearDownTest(c *C) {
+	killAll(c)
+}
+
 func (s *MainSuite) TestStartAndKillMaster(c *C) {
 	startMaster(c)
 
@@ -44,10 +48,9 @@ func (s *MainSuite) TestStartAndKillMaster(c *C) {
 	c.Assert(err, Not(Equals), nil)
 }
 
-func (s *MainSuite) TestPutAndGetFromReplicas(c *C) {
+func (s *MainSuite) TestPutGetAndDelFromReplicas(c *C) {
 	startReplicas(c, false)
 	startMaster(c)
-	defer killAll(c)
 
 	client := NewMasterClient(MasterPort)
 
@@ -69,13 +72,28 @@ func (s *MainSuite) TestPutAndGetFromReplicas(c *C) {
 		}(i)
 	}
 	wg.Wait()
+
+	err = client.Del("foo", make([]ReplicaDeath, 4))
+	c.Assert(err, Equals, nil)
+
+	// no replica should have the value
+	wg.Add(ReplicaCount)
+	for i := 0; i < ReplicaCount; i++ {
+		go func(i int) {
+			_, err := client.GetTest("foo", i)
+			if err == nil {
+				c.Error("Del failed.")
+			}
+			wg.Done()
+			c.Assert(err, Not(Equals), nil)
+		}(i)
+	}
+	wg.Wait()
 }
 
 func (s *MainSuite) TestReplicaShouldAbortIfPutOnLockedKey(c *C) {
 	startReplicas(c, false)
 	startMaster(c)
-	defer killAll(c)
-
 	client := NewReplicaClient(GetReplicaHost(0))
 
 	ok, err := client.TryPut("foo", "bar1", "tx1", ReplicaDontDie)
@@ -94,7 +112,6 @@ func (s *MainSuite) TestReplicaShouldAbortIfPutOnLockedKey(c *C) {
 func (s *MainSuite) TestReplicaShouldAbortIfDelOnLockedKey(c *C) {
 	startReplicas(c, false)
 	startMaster(c)
-	defer killAll(c)
 
 	client := NewReplicaClient(GetReplicaHost(0))
 
@@ -110,7 +127,6 @@ func (s *MainSuite) TestReplicaShouldAbortIfDelOnLockedKey(c *C) {
 func (s *MainSuite) TestReplicaShouldErrOnUnknownTxCommit(c *C) {
 	startReplicas(c, false)
 	startMaster(c)
-	defer killAll(c)
 
 	client := NewReplicaClient(GetReplicaHost(0))
 
@@ -121,7 +137,6 @@ func (s *MainSuite) TestReplicaShouldErrOnUnknownTxCommit(c *C) {
 func (s *MainSuite) TestReplicaShouldErrOnUnknownTxAbort(c *C) {
 	startReplicas(c, false)
 	startMaster(c)
-	defer killAll(c)
 
 	client := NewReplicaClient(GetReplicaHost(0))
 
@@ -132,7 +147,6 @@ func (s *MainSuite) TestReplicaShouldErrOnUnknownTxAbort(c *C) {
 func (s *MainSuite) TestReplicaShouldErrWithStress(c *C) {
 	startReplicas(c, false)
 	startMaster(c)
-	defer killAll(c)
 
 	keys := []string{"key1", "key2", "key3", "key4", "key5"}
 	const clients = 4
@@ -158,7 +172,6 @@ func (s *MainSuite) TestReplicaShouldErrWithStress(c *C) {
 func (s *MainSuite) TestTxShouldAbortIfReplicaDiesAtStartOfPut(c *C) {
 	startReplicas(c, false)
 	startMaster(c)
-	defer killAll(c)
 
 	client := NewMasterClient(MasterPort)
 
@@ -169,7 +182,6 @@ func (s *MainSuite) TestTxShouldAbortIfReplicaDiesAtStartOfPut(c *C) {
 func (s *MainSuite) TestTxShouldAbortIfReplicaDiesAfterLoggingButBeforeSendingPrepared(c *C) {
 	startReplicas(c, false)
 	startMaster(c)
-	defer killAll(c)
 
 	client := NewMasterClient(MasterPort)
 
@@ -180,7 +192,6 @@ func (s *MainSuite) TestTxShouldAbortIfReplicaDiesAfterLoggingButBeforeSendingPr
 func (s *MainSuite) TestTxShouldCommitIfReplicaDiesBeforeProcessingCommit(c *C) {
 	startReplicas(c, true)
 	startMaster(c)
-	defer killAll(c)
 
 	client := NewMasterClient(MasterPort)
 
@@ -191,11 +202,25 @@ func (s *MainSuite) TestTxShouldCommitIfReplicaDiesBeforeProcessingCommit(c *C) 
 func (s *MainSuite) TestTxShouldCommitIfReplicaDiesAfterLoggingCommit(c *C) {
 	startReplicas(c, true)
 	startMaster(c)
-	defer killAll(c)
 
 	client := NewMasterClient(MasterPort)
 
 	err := client.Put("foo", "bar", []ReplicaDeath{ReplicaDontDie, ReplicaDieAfterLoggingCommitted, ReplicaDontDie, ReplicaDontDie})
+	c.Assert(err, Equals, nil)
+
+	// Make sure the replica that died still committed
+	val, err := client.GetTest("foo", 1)
+	c.Assert(err, Equals, nil)
+	c.Assert(*val, Equals, "bar")
+}
+
+func (s *MainSuite) TestTxShouldCommitIfReplicaDiesAfterDeletingDataFromTemp(c *C) {
+	startReplicas(c, true)
+	startMaster(c)
+
+	client := NewMasterClient(MasterPort)
+
+	err := client.Put("foo", "bar", []ReplicaDeath{ReplicaDontDie, ReplicaDieAfterDeletingFromTempStore, ReplicaDontDie, ReplicaDontDie})
 	c.Assert(err, Equals, nil)
 
 	// Make sure the replica that died still committed
