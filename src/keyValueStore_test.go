@@ -83,6 +83,26 @@ func (s *KeyValueStoreSuite) TestKeyValueStoreMultiple(c *C) {
 	}
 }
 
+func (s *KeyValueStoreSuite) TestList(c *C) {
+	store := newKeyValueStore(testDbPath)
+	const count = 10
+
+	for i := 0; i < count; i += 1 {
+		store.put(fmt.Sprintf("key%v", i), fmt.Sprintf("val%v", i))
+	}
+
+	keys, err := store.list()
+	if err != nil {
+		c.Fatal("Failed to list:", err)
+	}
+
+	for i, key := range keys {
+		if key != fmt.Sprintf("key%v", i) {
+			c.Fatal("Key #", i, "was", key, "expected", fmt.Sprintf("key%v", i))
+		}
+	}
+}
+
 func (s *KeyValueStoreSuite) BenchmarkKeyValueStorePut(c *C) {
 	store := newKeyValueStore(testDbPath)
 	for i := 0; i < c.N; i++ {

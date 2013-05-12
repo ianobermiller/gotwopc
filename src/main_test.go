@@ -189,6 +189,8 @@ func (s *MainSuite) TestTxShouldAbortIfReplicaDiesAfterLoggingButBeforeSendingPr
 
 	err := client.PutTest("foo", "bar", MasterDontDie, []ReplicaDeath{ReplicaDontDie, ReplicaDontDie, ReplicaDontDie, ReplicaDieAfterLoggingPrepared})
 	c.Assert(err, Not(Equals), nil)
+
+	startReplica(c, 3, false)
 }
 
 func (s *MainSuite) TestTxShouldCommitIfReplicaDiesBeforeProcessingCommit(c *C) {

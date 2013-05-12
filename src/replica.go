@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"net/rpc"
 	"os"
+	"strings"
+	"time"
 )
 
 type Tx struct {
@@ -72,12 +74,17 @@ func NewReplica(num int) *Replica {
 		false}
 }
 
-func (r *Replica) GetTempStoreKey(txId string, key string) string {
+func (r *Replica) getTempStoreKey(txId string, key string) string {
 	return txId + "__" + key
 }
 
+func (r *Replica) parseTempStoreKey(key string) (txId string, txKey string) {
+	split := strings.Split(key, "__")
+	return split[0], split[1]
+}
+
 func (r *Replica) TryPut(args *TxPutArgs, reply *ReplicaActionResult) (err error) {
-	writeToTempStore := func() error { return r.tempStore.put(r.GetTempStoreKey(args.TxId, args.Key), args.Value) }
+	writeToTempStore := func() error { return r.tempStore.put(r.getTempStoreKey(args.TxId, args.Key), args.Value) }
 	return r.tryMutate(args.Key, args.TxId, args.Die, PutOp, writeToTempStore, reply)
 }
 
@@ -141,39 +148,52 @@ func (r *Replica) Commit(args *CommitArgs, reply *ReplicaActionResult) (err erro
 		log.Println("Received commit for transaction with unlocked key:", txId)
 	}
 
-	delete(r.lockedKeys, tx.key)
+	switch tx.state {
+	case Prepared:
+		err = r.commitTx(txId, tx.op, tx.key, args.Die)
+	default:
+		log.Println("Received commit for transaction in state ", tx.state.String())
+	}
 
-	switch tx.op {
+	if err == nil {
+		reply.Success = true
+	}
+	return
+}
+
+func (r *Replica) commitTx(txId string, op Operation, key string, die ReplicaDeath) (err error) {
+	delete(r.lockedKeys, key)
+
+	switch op {
 	case PutOp:
-		val, err := r.tempStore.get(r.GetTempStoreKey(txId, tx.key))
+		val, err := r.tempStore.get(r.getTempStoreKey(txId, key))
 		if err != nil {
-			return errors.New(fmt.Sprint("Unable to find val for uncommitted tx:", txId, "key:", tx.key))
+			return errors.New(fmt.Sprint("Unable to find val for uncommitted tx:", txId, "key:", key))
 		}
-		err = r.committedStore.put(tx.key, val)
+		err = r.committedStore.put(key, val)
 		if err != nil {
-			return errors.New(fmt.Sprint("Unable to put committed val for tx:", txId, "key:", tx.key))
+			return errors.New(fmt.Sprint("Unable to put committed val for tx:", txId, "key:", key))
 		}
 	case DelOp:
-		err = r.committedStore.del(tx.key)
+		err = r.committedStore.del(key)
 		if err != nil {
-			return errors.New(fmt.Sprint("Unable to commit del val for tx:", txId, "key:", tx.key))
+			return errors.New(fmt.Sprint("Unable to commit del val for tx:", txId, "key:", key))
 		}
 	}
 
 	r.log.writeState(txId, Committed)
 	delete(r.txs, txId)
-	reply.Success = true
 
 	// Delete the temp data only after committed, in case we crash after deleting, but before committing
-	if tx.op == PutOp {
-		err = r.tempStore.del(r.GetTempStoreKey(txId, tx.key))
-		r.dieIf(args.Die, ReplicaDieAfterDeletingFromTempStore)
+	if op == PutOp {
+		err = r.tempStore.del(r.getTempStoreKey(txId, key))
+		r.dieIf(die, ReplicaDieAfterDeletingFromTempStore)
 		if err != nil {
-			fmt.Println("Unable to del committed val for tx:", txId, "key:", tx.key)
+			fmt.Println("Unable to del committed val for tx:", txId, "key:", key)
 		}
 	}
 
-	r.dieIf(args.Die, ReplicaDieAfterLoggingCommitted)
+	r.dieIf(die, ReplicaDieAfterLoggingCommitted)
 	return nil
 }
 
@@ -194,14 +214,26 @@ func (r *Replica) Abort(args *AbortArgs, reply *ReplicaActionResult) (err error)
 		log.Println("Received abort for transaction with unlocked key:", txId)
 	}
 
-	delete(r.lockedKeys, tx.key)
+	switch tx.state {
+	case Prepared:
+		r.abortTx(txId, tx.op, tx.key)
+	default:
+		log.Println("Received abort for transaction in state ", tx.state.String())
+	}
 
-	switch tx.op {
+	reply.Success = true
+	return nil
+}
+
+func (r *Replica) abortTx(txId string, op Operation, key string) {
+	delete(r.lockedKeys, key)
+
+	switch op {
 	case PutOp:
 		// We no longer need the temp stored value
-		err := r.tempStore.del(r.GetTempStoreKey(txId, tx.key))
+		err := r.tempStore.del(r.getTempStoreKey(txId, key))
 		if err != nil {
-			fmt.Println("Unable to del val for uncommitted tx:", txId, "key:", tx.key)
+			fmt.Println("Unable to del val for uncommitted tx:", txId, "key:", key)
 		}
 		//case DelOp:
 		// nothing to undo here
@@ -209,8 +241,6 @@ func (r *Replica) Abort(args *AbortArgs, reply *ReplicaActionResult) (err error)
 
 	r.log.writeState(txId, Aborted)
 	delete(r.txs, txId)
-	reply.Success = true
-	return nil
 }
 
 func (r *Replica) Get(args *ReplicaKeyArgs, reply *ReplicaGetResult) (err error) {
@@ -244,12 +274,22 @@ func (r *Replica) recover() (err error) {
 			continue
 		}
 
+		if entry.state == Prepared {
+			entry.state = r.getStatus(entry.txId)
+			switch entry.state {
+			case Aborted:
+				log.Println("Aborting transaction during recovery: ", entry.txId, entry.key)
+				r.abortTx(entry.txId, RecoveryOp, entry.key)
+			case Committed:
+				log.Println("Committing transaction during recovery: ", entry.txId, entry.key)
+				r.commitTx(entry.txId, RecoveryOp, entry.key, ReplicaDontDie)
+			}
+		}
+
 		switch entry.state {
 		case Started:
-			// abort
 		case Prepared:
-			r.lockedKeys[entry.key] = true
-			r.txs[entry.txId] = &Tx{entry.txId, entry.key, entry.op, Prepared}
+			// abort
 		case Committed:
 			r.txs[entry.txId] = &Tx{entry.txId, entry.key, entry.op, Committed}
 		case Aborted:
@@ -257,10 +297,50 @@ func (r *Replica) recover() (err error) {
 		}
 	}
 
+	err = r.cleanUpTempStore()
+	if err != nil {
+		return
+	}
+
 	if r.didSuicide {
 		r.log.writeSpecial(firstRestartAfterSuicideMarker)
 	}
 	return
+}
+
+func (r *Replica) cleanUpTempStore() (err error) {
+	keys, err := r.tempStore.list()
+	if err != nil {
+		return
+	}
+
+	for _, key := range keys {
+		txId, _ := r.parseTempStoreKey(key)
+		tx, ok := r.txs[txId]
+		if !ok || tx.state != Prepared {
+			println("Cleaning up temp key ", key)
+			err = r.tempStore.del(key)
+			if err != nil {
+				return
+			}
+		}
+	}
+	return nil
+}
+
+// getStatus is only used during recovery to check the status from the Master
+func (r *Replica) getStatus(txId string) TxState {
+	client := NewMasterClient(MasterPort)
+	for {
+		state, err := client.Status(txId)
+		if err != nil {
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+		return *state
+	}
+
+	return NoState
 }
 
 func runReplica(num int) {

@@ -21,4 +21,3 @@ Some notes:
 TODO:
 
 * Trim the log
-* Clean up junk in temp data

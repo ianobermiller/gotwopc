@@ -52,9 +52,10 @@ func ParseTxState(s string) TxState {
 type Operation int
 
 const (
-	NoOp  Operation = iota
-	PutOp Operation = iota
+	NoOp Operation = iota
+	PutOp
 	DelOp
+	RecoveryOp
 )
 
 func (s Operation) String() string {
@@ -63,6 +64,8 @@ func (s Operation) String() string {
 		return "PUT"
 	case DelOp:
 		return "DEL"
+	case RecoveryOp:
+		return "RECOVERY"
 	}
 	return "INVALID"
 }
@@ -73,6 +76,8 @@ func ParseOperation(s string) Operation {
 		return PutOp
 	case "DEL":
 		return DelOp
+	case "RECOVERY":
+		return RecoveryOp
 	}
 	return NoOp
 }
