@@ -96,6 +96,8 @@ type MasterDeath int
 
 const (
 	MasterDontDie MasterDeath = iota
+	MasterDieBeforeLoggingCommitted
+	MasterDieAfterLoggingCommitted
 )
 
 var killedSelfMarker = "::justkilledself::"

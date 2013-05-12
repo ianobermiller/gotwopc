@@ -106,8 +106,9 @@ func (m *Master) Del(args *DelArgs, _ *int) (err error) {
 
 func (m *Master) DelTest(args *DelTestArgs, _ *int) (err error) {
 	return m.mutate(
-		"Del",
+		DelOp,
 		args.Key,
+		args.MasterDeath,
 		args.ReplicaDeaths,
 		func(r *ReplicaClient, txId string, i int, rd ReplicaDeath) (*bool, error) {
 			return r.TryDel(args.Key, txId, rd)
@@ -121,8 +122,9 @@ func (m *Master) Put(args *PutArgs, _ *int) (err error) {
 
 func (m *Master) PutTest(args *PutTestArgs, _ *int) (err error) {
 	return m.mutate(
-		"Put",
+		PutOp,
 		args.Key,
+		args.MasterDeath,
 		args.ReplicaDeaths,
 		func(r *ReplicaClient, txId string, i int, rd ReplicaDeath) (*bool, error) {
 			return r.TryPut(args.Key, args.Value, txId, rd)
@@ -137,7 +139,8 @@ func getReplicaDeath(replicaDeaths []ReplicaDeath, n int) ReplicaDeath {
 	return rd
 }
 
-func (m *Master) mutate(action string, key string, replicaDeaths []ReplicaDeath, f func(r *ReplicaClient, txId string, i int, rd ReplicaDeath) (*bool, error)) (err error) {
+func (m *Master) mutate(operation Operation, key string, masterDeath MasterDeath, replicaDeaths []ReplicaDeath, f func(r *ReplicaClient, txId string, i int, rd ReplicaDeath) (*bool, error)) (err error) {
+	action := operation.String()
 	txId := uniuri.New()
 	m.log.writeState(txId, Started)
 	m.txs[txId] = Started
@@ -162,23 +165,34 @@ func (m *Master) mutate(action string, key string, replicaDeaths []ReplicaDeath,
 		log.Println("Master."+action+" asking replicas to abort tx:", txId, "key:", key)
 		m.log.writeState(txId, Aborted)
 		m.txs[txId] = Aborted
-		m.forEachReplica(func(i int, r *ReplicaClient) {
-			_, err := r.Abort(txId, getReplicaDeath(replicaDeaths, i))
-			if err != nil {
-				log.Println("Master."+action+" r.Abort:", err)
-			}
-		})
+		m.sendAbort(action, txId)
 		return TxAbortedError
 	default:
 		break
 	}
 
 	// The transaction is now officially committed
+	m.dieIf(masterDeath, MasterDieBeforeLoggingCommitted)
 	m.log.writeState(txId, Committed)
+	m.dieIf(masterDeath, MasterDieAfterLoggingCommitted)
 	m.txs[txId] = Committed
 
 	log.Println("Master."+action+" asking replicas to commit tx:", txId, "key:", key)
+	m.sendAndWaitForCommit(action, txId, replicaDeaths)
 
+	return
+}
+
+func (m *Master) sendAbort(action string, txId string) {
+	m.forEachReplica(func(i int, r *ReplicaClient) {
+		_, err := r.Abort(txId)
+		if err != nil {
+			log.Println("Master."+action+" r.Abort:", err)
+		}
+	})
+}
+
+func (m *Master) sendAndWaitForCommit(action string, txId string, replicaDeaths []ReplicaDeath) {
 	m.forEachReplica(func(i int, r *ReplicaClient) {
 		for {
 			_, err := r.Commit(txId, getReplicaDeath(replicaDeaths, i))
@@ -189,8 +203,6 @@ func (m *Master) mutate(action string, key string, replicaDeaths []ReplicaDeath,
 			time.Sleep(100 * time.Millisecond)
 		}
 	})
-
-	return
 }
 
 func (m *Master) forEachReplica(f func(i int, r *ReplicaClient)) {
@@ -219,7 +231,7 @@ func (m *Master) Status(args *StatusArgs, reply *StatusResult) (err error) {
 	return nil
 }
 
-func (m *Master) Recover() (err error) {
+func (m *Master) recover() (err error) {
 	entries, err := m.log.read()
 	if err != nil {
 		return
@@ -236,13 +248,19 @@ func (m *Master) Recover() (err error) {
 			continue
 		}
 
-		switch entry.state {
+		m.txs[entry.txId] = entry.state
+	}
+
+	for txId, state := range m.txs {
+		switch state {
 		case Started:
-		case Prepared:
+			fallthrough
 		case Aborted:
-			// Abort
+			log.Println("Aborting tx", txId, "during recovery.")
+			m.sendAbort("recover", txId)
 		case Committed:
-			m.txs[entry.txId] = Committed
+			log.Println("Committing tx", txId, "during recovery.")
+			m.sendAndWaitForCommit("recover", txId, make([]ReplicaDeath, m.replicaCount))
 		}
 	}
 
@@ -266,7 +284,7 @@ func runMaster(replicaCount int) {
 	}
 
 	master := NewMaster(replicaCount)
-	err := master.Recover()
+	err := master.recover()
 	if err != nil {
 		log.Fatal("Error during recovery: ", err)
 	}

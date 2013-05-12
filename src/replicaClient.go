@@ -3,6 +3,7 @@ package main
 
 import (
 	"log"
+	"net"
 	"net/rpc"
 )
 
@@ -32,7 +33,8 @@ func (c *ReplicaClient) tryConnect() (err error) {
 
 func (c *ReplicaClient) call(serviceMethod string, args interface{}, reply interface{}) (err error) {
 	err = c.rpcClient.Call(serviceMethod, args, reply)
-	if err == rpc.ErrShutdown {
+	_, isNetOpError := err.(*net.OpError)
+	if err == rpc.ErrShutdown || isNetOpError {
 		c.rpcClient = nil
 	}
 	return
@@ -78,7 +80,7 @@ func (c *ReplicaClient) Commit(txid string, die ReplicaDeath) (Success *bool, er
 	}
 
 	var reply ReplicaActionResult
-	err = c.call("Replica.Commit", &TxArgs{ txid, die }, &reply)
+	err = c.call("Replica.Commit", &CommitArgs{ txid, die }, &reply)
 	if err != nil {
 		log.Println("ReplicaClient.Commit:", err)
 		return
@@ -89,13 +91,13 @@ func (c *ReplicaClient) Commit(txid string, die ReplicaDeath) (Success *bool, er
 	return
 }
 
-func (c *ReplicaClient) Abort(txid string, die ReplicaDeath) (Success *bool, err error) {
+func (c *ReplicaClient) Abort(txid string) (Success *bool, err error) {
 	if err = c.tryConnect(); err != nil {
 		return
 	}
 
 	var reply ReplicaActionResult
-	err = c.call("Replica.Abort", &TxArgs{ txid, die }, &reply)
+	err = c.call("Replica.Abort", &AbortArgs{ txid }, &reply)
 	if err != nil {
 		log.Println("ReplicaClient.Abort:", err)
 		return

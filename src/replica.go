@@ -29,9 +29,13 @@ type TxDelArgs struct {
 	Die  ReplicaDeath
 }
 
-type TxArgs struct {
+type CommitArgs struct {
 	TxId string
 	Die  ReplicaDeath
+}
+
+type AbortArgs struct {
+	TxId string
 }
 
 type ReplicaKeyArgs struct {
@@ -117,7 +121,7 @@ func (r *Replica) tryMutate(key string, txId string, die ReplicaDeath, op Operat
 	return
 }
 
-func (r *Replica) Commit(args *TxArgs, reply *ReplicaActionResult) (err error) {
+func (r *Replica) Commit(args *CommitArgs, reply *ReplicaActionResult) (err error) {
 	r.dieIf(args.Die, ReplicaDieBeforeProcessingCommit)
 
 	reply.Success = false
@@ -173,7 +177,7 @@ func (r *Replica) Commit(args *TxArgs, reply *ReplicaActionResult) (err error) {
 	return nil
 }
 
-func (r *Replica) Abort(args *TxArgs, reply *ReplicaActionResult) (err error) {
+func (r *Replica) Abort(args *AbortArgs, reply *ReplicaActionResult) (err error) {
 	reply.Success = false
 
 	txId := args.TxId

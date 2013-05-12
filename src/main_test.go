@@ -142,7 +142,7 @@ func (s *MainSuite) TestReplicaShouldErrOnUnknownTxAbort(c *C) {
 
 	client := NewReplicaClient(GetReplicaHost(0))
 
-	_, err := client.Abort("tx1", ReplicaDontDie)
+	_, err := client.Abort("tx1")
 	c.Assert(err, Not(Equals), nil)
 }
 
@@ -249,4 +249,43 @@ func (s *MainSuite) TestPutGetDelFromMaster(c *C) {
 
 	val, err = client.Get("TestPutGetDelFromMaster")
 	c.Assert(err, Not(Equals), nil)
+}
+
+func (s *MainSuite) TestTxShouldAbortIfMasterDiesBeforeLoggingCommitted(c *C) {
+	startReplicas(c, true)
+	startMaster(c)
+
+	client := NewMasterClient(MasterPort)
+
+	err := client.PutTest("DiedBefore", "first", MasterDieBeforeLoggingCommitted, make([]ReplicaDeath, 4))
+	c.Assert(err, Not(Equals), nil)
+
+	startMaster(c)
+	// Master should recover and issue abort to all replicas, so a subsequent put on the same key should succeed
+	// (they shouldn't be locking the key)
+
+	err = client.Put("DiedBefore", "second")
+	c.Assert(err, Equals, nil)
+
+	val, err := client.Get("DiedBefore")
+	c.Assert(err, Equals, nil)
+	c.Assert(*val, Equals, "second")
+}
+
+func (s *MainSuite) TestTxShouldCommitIfMasterDiesAfterLoggingCommitted(c *C) {
+	startReplicas(c, true)
+	startMaster(c)
+
+	client := NewMasterClient(MasterPort)
+
+	err := client.PutTest("DiedAfter", "shazam", MasterDieAfterLoggingCommitted, make([]ReplicaDeath, 4))
+	c.Assert(err, Not(Equals), nil)
+
+	startMaster(c)
+	// Master should recover and issue commit to all replicas (bringing them out of the uncertain state),
+	// so a subsequent get should return the correct value
+
+	val, err := client.Get("DiedAfter")
+	c.Assert(err, Equals, nil)
+	c.Assert(*val, Equals, "shazam")
 }
