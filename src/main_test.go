@@ -230,3 +230,23 @@ func (s *MainSuite) TestTxShouldCommitIfReplicaDiesAfterDeletingDataFromTemp(c *
 	c.Assert(err, Equals, nil)
 	c.Assert(*val, Equals, "bar")
 }
+
+func (s *MainSuite) TestPutGetDelFromMaster(c *C) {
+	startReplicas(c, true)
+	startMaster(c)
+
+	client := NewMasterClient(MasterPort)
+
+	err := client.Put("TestPutGetDelFromMaster", "super")
+	c.Assert(err, Equals, nil)
+
+	val, err := client.Get("TestPutGetDelFromMaster")
+	c.Assert(err, Equals, nil)
+	c.Assert(*val, Equals, "super")
+
+	err = client.Del("TestPutGetDelFromMaster")
+	c.Assert(err, Equals, nil)
+
+	val, err = client.Get("TestPutGetDelFromMaster")
+	c.Assert(err, Not(Equals), nil)
+}
