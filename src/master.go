@@ -20,10 +20,16 @@ type Master struct {
 	replicaCount int
 	replicas     []*ReplicaClient
 	log          *logger
+	txs          map[string]TxState
 	didSuicide   bool
 }
 
 type PutArgs struct {
+	Key   string
+	Value string
+}
+
+type PutTestArgs struct {
 	Key           string
 	Value         string
 	MasterDeath   MasterDeath
@@ -40,9 +46,21 @@ type GetTestArgs struct {
 }
 
 type DelArgs struct {
+	Key string
+}
+
+type DelTestArgs struct {
 	Key           string
 	MasterDeath   MasterDeath
 	ReplicaDeaths []ReplicaDeath
+}
+
+type StatusArgs struct {
+	TxId string
+}
+
+type StatusResult struct {
+	State TxState
 }
 
 type PingArgs struct {
@@ -59,7 +77,7 @@ func NewMaster(replicaCount int) *Master {
 	for i := 0; i < replicaCount; i++ {
 		replicas[i] = NewReplicaClient(GetReplicaHost(i))
 	}
-	return &Master{replicaCount, replicas, l, false}
+	return &Master{replicaCount, replicas, l, make(map[string]TxState), false}
 }
 
 func (m *Master) Get(args *GetArgs, reply *GetResult) (err error) {
@@ -82,36 +100,56 @@ func (m *Master) GetTest(args *GetTestArgs, reply *GetResult) (err error) {
 }
 
 func (m *Master) Del(args *DelArgs, _ *int) (err error) {
+	var i int
+	return m.DelTest(&DelTestArgs{args.Key, MasterDontDie, make([]ReplicaDeath, m.replicaCount)}, &i)
+}
+
+func (m *Master) DelTest(args *DelTestArgs, _ *int) (err error) {
 	return m.mutate(
+		"Del",
 		args.Key,
 		args.ReplicaDeaths,
-		func(r *ReplicaClient, txId string, i int) (*bool, error) {
-			return r.TryDel(args.Key, txId, args.ReplicaDeaths[i])
+		func(r *ReplicaClient, txId string, i int, rd ReplicaDeath) (*bool, error) {
+			return r.TryDel(args.Key, txId, rd)
 		})
 }
 
 func (m *Master) Put(args *PutArgs, _ *int) (err error) {
+	var i int
+	return m.PutTest(&PutTestArgs{args.Key, args.Value, MasterDontDie, make([]ReplicaDeath, m.replicaCount)}, &i)
+}
+
+func (m *Master) PutTest(args *PutTestArgs, _ *int) (err error) {
 	return m.mutate(
+		"Put",
 		args.Key,
 		args.ReplicaDeaths,
-		func(r *ReplicaClient, txId string, i int) (*bool, error) {
-			return r.TryPut(args.Key, args.Value, txId, args.ReplicaDeaths[i])
+		func(r *ReplicaClient, txId string, i int, rd ReplicaDeath) (*bool, error) {
+			return r.TryPut(args.Key, args.Value, txId, rd)
 		})
 }
 
-func (m *Master) mutate(key string, replicaDeaths []ReplicaDeath, f func(r *ReplicaClient, txId string, i int) (*bool, error)) (err error) {
+func getReplicaDeath(replicaDeaths []ReplicaDeath, n int) ReplicaDeath {
+	rd := ReplicaDontDie
+	if replicaDeaths != nil && len(replicaDeaths) > n {
+		rd = replicaDeaths[n]
+	}
+	return rd
+}
+
+func (m *Master) mutate(action string, key string, replicaDeaths []ReplicaDeath, f func(r *ReplicaClient, txId string, i int, rd ReplicaDeath) (*bool, error)) (err error) {
 	txId := uniuri.New()
 	m.log.writeState(txId, Started)
+	m.txs[txId] = Started
 
-	// Send out all TryPut requests in parallel
-	// if any abort, send on the channel.
+	// Send out all mutate requests in parallel. If any abort, send on the channel.
 	// Channel must be buffered to allow the non-blocking read in the switch.
 	shouldAbort := make(chan int, m.replicaCount)
-	log.Println("Master.Put asking replicas to put tx:", txId, "key:", key)
+	log.Println("Master."+action+" asking replicas to "+action+" tx:", txId, "key:", key)
 	m.forEachReplica(func(i int, r *ReplicaClient) {
-		success, err := f(r, txId, i)
+		success, err := f(r, txId, i, getReplicaDeath(replicaDeaths, i))
 		if err != nil {
-			log.Println("Master.Put r.TryPut:", err)
+			log.Println("Master."+action+" r.Try"+action+":", err)
 		}
 		if success == nil || !*success {
 			shouldAbort <- 1
@@ -121,12 +159,13 @@ func (m *Master) mutate(key string, replicaDeaths []ReplicaDeath, f func(r *Repl
 	// If at least one replica needed to abort
 	select {
 	case <-shouldAbort:
-		log.Println("Master.Put asking replicas to abort tx:", txId, "key:", key)
+		log.Println("Master."+action+" asking replicas to abort tx:", txId, "key:", key)
 		m.log.writeState(txId, Aborted)
+		m.txs[txId] = Aborted
 		m.forEachReplica(func(i int, r *ReplicaClient) {
-			_, err := r.Abort(txId, replicaDeaths[i])
+			_, err := r.Abort(txId, getReplicaDeath(replicaDeaths, i))
 			if err != nil {
-				log.Println("Master.Put r.Abort:", err)
+				log.Println("Master."+action+" r.Abort:", err)
 			}
 		})
 		return TxAbortedError
@@ -136,16 +175,17 @@ func (m *Master) mutate(key string, replicaDeaths []ReplicaDeath, f func(r *Repl
 
 	// The transaction is now officially committed
 	m.log.writeState(txId, Committed)
+	m.txs[txId] = Committed
 
-	log.Println("Master.Put asking replicas to commit tx:", txId, "key:", key)
+	log.Println("Master."+action+" asking replicas to commit tx:", txId, "key:", key)
 
 	m.forEachReplica(func(i int, r *ReplicaClient) {
 		for {
-			_, err := r.Commit(txId, replicaDeaths[i])
+			_, err := r.Commit(txId, getReplicaDeath(replicaDeaths, i))
 			if err == nil {
 				break
 			}
-			log.Println("Master.Put r.Commit:", err)
+			log.Println("Master."+action+" r.Commit:", err)
 			time.Sleep(100 * time.Millisecond)
 		}
 	})
@@ -170,6 +210,15 @@ func (m *Master) Ping(args *PingArgs, reply *GetResult) (err error) {
 	return nil
 }
 
+func (m *Master) Status(args *StatusArgs, reply *StatusResult) (err error) {
+	state, ok := m.txs[args.TxId]
+	if !ok {
+		state = NoState
+	}
+	reply.State = state
+	return nil
+}
+
 func (m *Master) Recover() (err error) {
 	entries, err := m.log.read()
 	if err != nil {
@@ -189,10 +238,11 @@ func (m *Master) Recover() (err error) {
 
 		switch entry.state {
 		case Started:
-			// abort
 		case Prepared:
-		case Committed:
 		case Aborted:
+			// Abort
+		case Committed:
+			m.txs[entry.txId] = Committed
 		}
 	}
 

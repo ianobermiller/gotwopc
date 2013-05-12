@@ -72,13 +72,13 @@ func (c *MasterClient) GetTest(key string, replicanum int) (Value *string, err e
 	return
 }
 
-func (c *MasterClient) Del(key string, masterdeath MasterDeath, replicadeaths []ReplicaDeath) (err error) {
+func (c *MasterClient) Del(key string) (err error) {
 	if err = c.tryConnect(); err != nil {
 		return
 	}
 
 	var reply int
-	err = c.call("Master.Del", &DelArgs{ key, masterdeath, replicadeaths }, &reply)
+	err = c.call("Master.Del", &DelArgs{ key }, &reply)
 	if err != nil {
 		log.Println("MasterClient.Del:", err)
 		return
@@ -87,15 +87,45 @@ func (c *MasterClient) Del(key string, masterdeath MasterDeath, replicadeaths []
 	return
 }
 
-func (c *MasterClient) Put(key string, value string, masterdeath MasterDeath, replicadeaths []ReplicaDeath) (err error) {
+func (c *MasterClient) DelTest(key string, masterdeath MasterDeath, replicadeaths []ReplicaDeath) (err error) {
 	if err = c.tryConnect(); err != nil {
 		return
 	}
 
 	var reply int
-	err = c.call("Master.Put", &PutArgs{ key, value, masterdeath, replicadeaths }, &reply)
+	err = c.call("Master.DelTest", &DelTestArgs{ key, masterdeath, replicadeaths }, &reply)
+	if err != nil {
+		log.Println("MasterClient.DelTest:", err)
+		return
+	}
+	
+	return
+}
+
+func (c *MasterClient) Put(key string, value string) (err error) {
+	if err = c.tryConnect(); err != nil {
+		return
+	}
+
+	var reply int
+	err = c.call("Master.Put", &PutArgs{ key, value }, &reply)
 	if err != nil {
 		log.Println("MasterClient.Put:", err)
+		return
+	}
+	
+	return
+}
+
+func (c *MasterClient) PutTest(key string, value string, masterdeath MasterDeath, replicadeaths []ReplicaDeath) (err error) {
+	if err = c.tryConnect(); err != nil {
+		return
+	}
+
+	var reply int
+	err = c.call("Master.PutTest", &PutTestArgs{ key, value, masterdeath, replicadeaths }, &reply)
+	if err != nil {
+		log.Println("MasterClient.PutTest:", err)
 		return
 	}
 	
@@ -115,6 +145,23 @@ func (c *MasterClient) Ping(key string) (Value *string, err error) {
 	}
 	
 	Value = &reply.Value
+	
+	return
+}
+
+func (c *MasterClient) Status(txid string) (State *TxState, err error) {
+	if err = c.tryConnect(); err != nil {
+		return
+	}
+
+	var reply StatusResult
+	err = c.call("Master.Status", &StatusArgs{ txid }, &reply)
+	if err != nil {
+		log.Println("MasterClient.Status:", err)
+		return
+	}
+	
+	State = &reply.State
 	
 	return
 }
