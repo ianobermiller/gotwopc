@@ -16,6 +16,7 @@ package main
 
 import (
 	"log"
+	"net"
 	"net/rpc"
 )
 
@@ -45,7 +46,8 @@ func (c *{{.Name}}Client) tryConnect() (err error) {
 
 func (c *{{.Name}}Client) call(serviceMethod string, args interface{}, reply interface{}) (err error) {
 	err = c.rpcClient.Call(serviceMethod, args, reply)
-	if err == rpc.ErrShutdown {
+	_, isNetOpError := err.(*net.OpError)
+	if err == rpc.ErrShutdown || isNetOpError {
 		c.rpcClient = nil
 	}
 	return
